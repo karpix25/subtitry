@@ -1,0 +1,6 @@
+{
+  "lifetime_frames_max": 120,
+  "vertical_band_pct": 0.3,
+  "min_text_length": 8,
+  "edge_density_threshold": 0.15
+}
