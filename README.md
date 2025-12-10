@@ -7,6 +7,7 @@ FastAPI service for removing subtitle overlays from trading videos using PaddleO
 - CPU-only Navier-Stokes inpainting via OpenCV
 - Streaming frame pipeline without intermediate disk writes
 - `/clean`, `/preview`, `/health` HTTP endpoints
+- Optional webhook callbacks plus `/tasks/{id}` status polling for long jobs
 - Docker image ready for EasyPanel deployments (port 8000)
 
 ## Project Layout
@@ -35,14 +36,19 @@ uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
 ## API
 ### `POST /clean`
-Multipart upload (`file`) with optional form fields: `max_resolution`, `inpaint_radius`, `subtitle_intensity_threshold`.
-Returns processing stats plus a filesystem URL to the cleaned video.
+Multipart upload (`file`) with optional form fields: `max_resolution`, `inpaint_radius`, `subtitle_intensity_threshold`, `callback_url`.
+
+- Without `callback_url` the endpoint streams the processing and returns the cleaned video stats once finished.
+- With `callback_url` the upload is accepted asynchronously: the response includes `task_id`, processing happens in the background, and the service POSTs the final payload (success or failure) to the provided URL. You can also poll `/tasks/{task_id}`.
 
 ### `POST /preview`
 Returns single-frame before/after PNGs (base64) plus mask for debugging heuristics.
 
 ### `GET /health`
 Simple readiness probe.
+
+### `GET /tasks/{task_id}`
+Returns the stored status/result for asynchronous jobs created via `callback_url`.
 
 ## Docker
 Build and run:
