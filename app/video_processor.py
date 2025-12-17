@@ -313,8 +313,11 @@ class VideoProcessor:
                                 if frame_idx in track.frames:
                                     bbox = track.boxes[track.frames.index(frame_idx)]
                                 elif track.boxes:
-                                    # Fallback only if strictly necessary (shouldn't happen in this loop structure)
-                                    bbox = track.boxes[-1]
+                                    # Hold the last known box for visualization (stable view)
+                                    # Check if the track is theoretically "active" (last detection recent)
+                                    last_frame = track.frames[-1]
+                                    if (frame_idx - last_frame) < (keyframe_step * 2): 
+                                        bbox = track.boxes[-1]
                             except ValueError:
                                 pass
                             
