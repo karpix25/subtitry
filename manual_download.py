@@ -27,13 +27,16 @@ MODELS = {
 
 def download_and_extract(url, category, subdir):
     filename = url.split("/")[-1]
-    # Structure: BASE / category / subdir / folder_name_from_tar
+    model_name = filename.replace(".tar", "")
     
-    # We download tar to: BASE / category / subdir / filename
-    target_dir = BASE_DIR / category / subdir
-    target_dir.mkdir(parents=True, exist_ok=True)
+    # PaddleOCR Structure: BASE / category / subdir / model_name / filename
+    # Example: .../whl/det/en/en_PP-OCRv3_det_infer/en_PP-OCRv3_det_infer.tar
     
-    tar_path = target_dir / filename
+    parent_dir = BASE_DIR / category / subdir
+    model_dir = parent_dir / model_name
+    model_dir.mkdir(parents=True, exist_ok=True)
+    
+    tar_path = model_dir / filename
     
     print(f"Downloading {url} to {tar_path}...")
     try:
@@ -44,8 +47,11 @@ def download_and_extract(url, category, subdir):
                     f.write(chunk)
                     
         print(f"Extracting {tar_path}...")
+        # Extract to parent_dir because tar usually contains the model_name directory
+        # e.g. tar contains "en_PP-OCRv3_det_infer/..." and we want it in ".../det/en/en_PP-OCRv3_det_infer/"
+        # extracting to parent_dir (".../det/en") will create/merge into ".../det/en/en_PP-OCRv3_det_infer/"
         with tarfile.open(tar_path) as tar:
-            tar.extractall(path=target_dir)
+            tar.extractall(path=parent_dir)
             
         print("Done.")
     except Exception as e:
