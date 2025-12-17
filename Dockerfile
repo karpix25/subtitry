@@ -24,9 +24,9 @@ RUN pip install --no-cache-dir --upgrade pip
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Preload PaddleOCR models
-COPY preload_models.py .
-# RUN python preload_models.py && rm preload_models.py
+# Preload PaddleOCR models (Manual download to avoid build crash)
+COPY manual_download.py .
+RUN python manual_download.py && rm manual_download.py
 
 # Create output directory
 RUN mkdir -p output
