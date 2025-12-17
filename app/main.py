@@ -67,6 +67,7 @@ async def clean_video(
     language_hint: str = Form("auto"),
     video_url: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None),
+    debug: bool = Form(True),
     request: Request = None,
 ) -> JSONResponse:
     if file is None and video_url is None:
@@ -124,6 +125,7 @@ async def clean_video(
                     options=options,
                     callback_url=callback_url,
                     base_url=str(request.base_url) if request else "",
+                    debug=debug,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -138,7 +140,7 @@ async def clean_video(
     try:
         output_path = OUTPUT_DIR / f"cleaned_{int(time.time() * 1000)}.mp4"
         stats = await asyncio.get_event_loop().run_in_executor(
-            None, lambda: processor.process_video(input_path, output_path, options)
+            None, lambda: processor.process_video(input_path, output_path, options, debug=debug)
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -220,11 +222,12 @@ def _process_async_task(
     options: VideoProcessingOptions,
     callback_url: Optional[str],
     base_url: str = "",
+    debug: bool = True,
 ) -> None:
     start_time = time.perf_counter()
     task_manager.mark_processing(task_id)
     try:
-        stats = processor.process_video(input_path, output_path, options)
+        stats = processor.process_video(input_path, output_path, options, debug=debug)
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
         payload = {
             "task_id": task_id,
