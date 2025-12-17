@@ -62,6 +62,7 @@ async def clean_video(
     inpaint_radius: int = Form(4),
     subtitle_intensity_threshold: Optional[float] = Form(None),
     keyframe_interval: float = Form(0.5),
+    bbox_padding: float = Form(0.1),
     language_hint: str = Form("auto"),
     video_url: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None),
