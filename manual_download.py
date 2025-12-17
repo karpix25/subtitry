@@ -69,7 +69,9 @@ def main():
     download_and_extract(MODELS["rec"]["ru"], "rec", "multilingual")
     
     # 4. Classification
-    download_and_extract(MODELS["cls"]["ch"], "cls", "ch")
+    # CLS model is usually language-agnostic in path (or uses flat structure under cls)
+    # Error expected: .../whl/cls/ch_ppocr_mobile_v2.0_cls_infer/...
+    download_and_extract(MODELS["cls"]["ch"], "cls", "")
 
 if __name__ == "__main__":
     main()
