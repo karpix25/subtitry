@@ -11,6 +11,8 @@ import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi import Request
 from loguru import logger
 
 from .task_manager import TaskManager
@@ -30,6 +32,9 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 processor = VideoProcessor()
 task_manager = TaskManager()
 
+# Mount output directory for static access
+app.mount("/output", StaticFiles(directory=OUTPUT_DIR), name="output")
+
 
 @app.get("/health")
 def health_check() -> dict[str, str]:
@@ -45,7 +50,9 @@ async def clean_video(
     keyframe_interval: float = Form(0.5),
     bbox_padding: float = Form(0.1),
     language_hint: str = Form("auto"),
+    language_hint: str = Form("auto"),
     callback_url: Optional[str] = Form(None),
+    request: Request = None,
 ) -> JSONResponse:
     if file.content_type is None or not file.content_type.startswith("video"):
         raise HTTPException(status_code=400, detail="Expected video file upload")
@@ -77,6 +84,7 @@ async def clean_video(
                     output_path=output_path,
                     options=options,
                     callback_url=callback_url,
+                    base_url=str(request.base_url) if request else "",
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -105,7 +113,7 @@ async def clean_video(
     payload = {
         "status": "ok",
         "output_path": str(output_path.resolve()),
-        "video_url": str(output_path.resolve()),
+        "video_url": f"{request.base_url}output/{output_path.name}" if request else str(output_path.resolve()),
         "processing_time_seconds": elapsed_ms / 1000,
         "time_ms": elapsed_ms,
         "total_frames": stats.get("frames", 0),
@@ -172,6 +180,7 @@ def _process_async_task(
     output_path: Path,
     options: VideoProcessingOptions,
     callback_url: Optional[str],
+    base_url: str = "",
 ) -> None:
     start_time = time.perf_counter()
     task_manager.mark_processing(task_id)
@@ -181,7 +190,7 @@ def _process_async_task(
         payload = {
             "task_id": task_id,
             "status": "completed",
-            "video_url": str(output_path.resolve()),
+            "video_url": f"{base_url}output/{output_path.name}" if base_url else str(output_path.resolve()),
             "time_ms": elapsed_ms,
             "stats": stats,
         }
