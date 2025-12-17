@@ -8,7 +8,7 @@ BASE_DIR = Path("/root/.paddleocr/whl")
 
 MODELS = {
     "det": {
-        "en": "https://paddleocr.bj.bcebos.com/PP-OCRv4/english/en_PP-OCRv4_det_infer.tar",
+        "en": "https://paddleocr.bj.bcebos.com/PP-OCRv3/english/en_PP-OCRv3_det_infer.tar",
     },
     "rec": {
         "en": "https://paddleocr.bj.bcebos.com/PP-OCRv4/english/en_PP-OCRv4_rec_infer.tar",
