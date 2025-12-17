@@ -1,0 +1,14 @@
+__pycache__
+*.pyc
+.git
+.gitignore
+.env
+venv
+venv311
+output/*
+test_*
+*.mp4
+*.png
+.DS_Store
+.idea
+.vscode

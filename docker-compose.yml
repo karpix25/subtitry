@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    container_name: subtitle_cleaner
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./output:/app/output
+      # Persist PaddleOCR models
+      - paddle_models:/root/.paddlex
+    environment:
+      - MAX_WORKERS=1
+    restart: unless-stopped
+
+volumes:
+  paddle_models:

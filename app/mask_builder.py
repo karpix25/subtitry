@@ -11,9 +11,23 @@ class MaskBuilder:
         for track in tracks:
             if track.classification != "subtitle":
                 continue
-            if frame_idx not in track.frames:
+            if not track.frames:
                 continue
-            bbox = track.boxes[track.frames.index(frame_idx)]
+            
+            # Check recency: persistence for 30 frames (~1 sec)
+            last_seen = track.frames[-1]
+            if (frame_idx - last_seen) > 30:
+                continue
+
+            # Strict Inpainting: use the EXACT box for the current frame if available.
+            # Only use specific box to match user's "tight" requirement.
+            bbox = None
+            if frame_idx in track.frames:
+                 bbox = track.boxes[track.frames.index(frame_idx)]
+            else:
+                 # Persistence: use the last known box
+                 bbox = track.boxes[-1]
+                
             x1, y1, x2, y2 = [int(v) for v in bbox]
             mask[max(y1, 0) : max(y2, 0), max(x1, 0) : max(x2, 0)] = 255
         return mask

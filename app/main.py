@@ -42,6 +42,9 @@ async def clean_video(
     max_resolution: int = Form(1080),
     inpaint_radius: int = Form(4),
     subtitle_intensity_threshold: Optional[float] = Form(None),
+    keyframe_interval: float = Form(0.5),
+    bbox_padding: float = Form(0.1),
+    language_hint: str = Form("auto"),
     callback_url: Optional[str] = Form(None),
 ) -> JSONResponse:
     if file.content_type is None or not file.content_type.startswith("video"):
@@ -52,6 +55,9 @@ async def clean_video(
         max_resolution=max_resolution,
         inpaint_radius=inpaint_radius,
         subtitle_intensity_threshold=subtitle_intensity_threshold,
+        keyframe_interval=keyframe_interval,
+        bbox_padding=bbox_padding,
+        language_hint=language_hint,
     )
 
     with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or "video").suffix) as tmp_in:
@@ -98,9 +104,15 @@ async def clean_video(
     elapsed_ms = int((time.perf_counter() - start_time) * 1000)
     payload = {
         "status": "ok",
+        "output_path": str(output_path.resolve()),
         "video_url": str(output_path.resolve()),
+        "processing_time_seconds": elapsed_ms / 1000,
         "time_ms": elapsed_ms,
-        "stats": stats,
+        "total_frames": stats.get("frames", 0),
+        "subtitle_frames": stats.get("subtitle_frames", 0),
+        "keyframes_analyzed": stats.get("keyframes_analyzed", 0),
+        "fps": stats.get("fps", 0),
+        "duration": stats.get("duration", 0),
     }
     return JSONResponse(payload)
 
@@ -111,6 +123,8 @@ async def preview_frame(
     frame_number: int = Form(0),
     max_resolution: int = Form(720),
     inpaint_radius: int = Form(4),
+    bbox_padding: float = Form(0.1),
+    language_hint: str = Form("auto"),
 ):
     """Optional helper endpoint that returns a single before/after frame pair."""
     if frame_number < 0:
@@ -126,7 +140,12 @@ async def preview_frame(
             lambda: processor.preview_frame(
                 input_path,
                 frame_number,
-                VideoProcessingOptions(max_resolution=max_resolution, inpaint_radius=inpaint_radius),
+                VideoProcessingOptions(
+                    max_resolution=max_resolution,
+                    inpaint_radius=inpaint_radius,
+                    bbox_padding=bbox_padding,
+                    language_hint=language_hint,
+                ),
             ),
         )
     except Exception as exc:  # noqa: BLE001

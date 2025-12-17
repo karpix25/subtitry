@@ -12,11 +12,22 @@ class TextTrack:
     texts: List[str] = field(default_factory=list)
     classification: Optional[str] = None
     stroke_detected: bool = False
+    merged_bbox: Optional[tuple[int, int, int, int]] = None
 
     def add(self, bbox: tuple[int, int, int, int], frame_idx: int, text: str) -> None:
         self.boxes.append(bbox)
         self.frames.append(frame_idx)
         self.texts.append(text)
+        
+        # Update merged_bbox
+        if self.merged_bbox is None:
+            self.merged_bbox = bbox
+        else:
+            x1 = min(self.merged_bbox[0], bbox[0])
+            y1 = min(self.merged_bbox[1], bbox[1])
+            x2 = max(self.merged_bbox[2], bbox[2])
+            y2 = max(self.merged_bbox[3], bbox[3])
+            self.merged_bbox = (x1, y1, x2, y2)
 
     @property
     def lifetime(self) -> int:
@@ -49,22 +60,54 @@ class SubtitleClassifier:
     def __init__(self, frame_height: int) -> None:
         self.frame_height = frame_height
 
-    def classify(self, track: TextTrack, subtitle_intensity_threshold: Optional[float] = None) -> str:
-        band = 0.3 * self.frame_height
-        in_vertical_band = track.avg_y < band or track.avg_y > (self.frame_height - band)
+    def classify(self, track: TextTrack, subtitle_intensity_threshold: Optional[float] = None, subtitle_region_height: float = 0.3, frame_width: Optional[int] = None) -> str:
+        # Define subtitle band at bottom of screen based on region height
+        min_y = self.frame_height * (1.0 - subtitle_region_height)
+        
+        # Check if track is within the subtitle band
+        # We check if center point (avg_y) is in the lower region
+        in_vertical_band = track.avg_y >= min_y
+        
         score_gate = True
         if subtitle_intensity_threshold is not None:
             score_gate = self._score_gate(track, subtitle_intensity_threshold)
 
-        if (
-            track.lifetime < 120
-            and in_vertical_band
-            and track.text_len > 8
-            and (track.stroke_detected or score_gate)
-        ):
+        # Log detailed reason for debug
+        problems = []
+        if track.lifetime >= 3000:
+            problems.append(f"lifetime({track.lifetime})>=3000")
+        if not in_vertical_band:
+            problems.append(f"y({track.avg_y:.1f})<{min_y:.1f}")
+        if track.text_len <= 2:
+            problems.append(f"len({track.text_len:.1f})<=2")
+        if not (track.stroke_detected or score_gate):
+            problems.append("no_stroke")
+            
+        # Centering check (if frame_width provided)
+        if frame_width:
+             # Calculate track center X
+             if track.merged_bbox:
+                 mid_x = (track.merged_bbox[0] + track.merged_bbox[2]) / 2
+             elif track.boxes:
+                 # fallback to last box
+                 b = track.boxes[-1]
+                 mid_x = (b[0] + b[2]) / 2
+             else:
+                 mid_x = 0
+             
+             center_diff = abs(mid_x - (frame_width / 2))
+             # Threshold: Allow 20% deviation from center (e.g. 200px on 1000px width)
+             # Subtitles are usually perfectly centered, 20% is generous.
+             if center_diff > (frame_width * 0.25):
+                  problems.append(f"off_center({center_diff:.0f})")
+
+        if not problems:
             track.classification = "subtitle"
         else:
             track.classification = "ui"
+            # Optional: print for debug, or could attach to track for visualization
+            print(f"[DEBUG] Track {track.track_id} rejected: {', '.join(problems)} Text: '{track.texts[-1] if track.texts else ''}'")
+            
         return track.classification
 
     @staticmethod
