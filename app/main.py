@@ -57,17 +57,18 @@ def health_check() -> dict[str, str]:
 
 @app.post("/clean")
 async def clean_video(
-    file: UploadFile = File(...),
+    file: Optional[UploadFile] = File(None),
     max_resolution: int = Form(1080),
     inpaint_radius: int = Form(4),
     subtitle_intensity_threshold: Optional[float] = Form(None),
     keyframe_interval: float = Form(0.5),
     language_hint: str = Form("auto"),
+    video_url: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None),
     request: Request = None,
 ) -> JSONResponse:
-    if file.content_type is None or not file.content_type.startswith("video"):
-        raise HTTPException(status_code=400, detail="Expected video file upload")
+    if file is None and video_url is None:
+        raise HTTPException(status_code=400, detail="Either file upload or video_url is required")
 
     start_time = time.perf_counter()
     options = VideoProcessingOptions(
@@ -79,9 +80,33 @@ async def clean_video(
         language_hint=language_hint,
     )
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=Path(file.filename or "video").suffix) as tmp_in:
-        shutil.copyfileobj(file.file, tmp_in)
-        input_path = Path(tmp_in.name)
+    input_path = None
+    input_path = None
+    if file:
+        suffix = Path(file.filename or "video").suffix or ".mp4"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+            shutil.copyfileobj(file.file, tmp_in)
+            input_path = Path(tmp_in.name)
+    elif video_url:
+        suffix = ".mp4" # Basic assumption, could be improved
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp_in:
+            input_path = Path(tmp_in.name)
+        
+        # Download video
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(video_url, follow_redirects=True, timeout=60.0)
+                resp.raise_for_status()
+                with open(input_path, "wb") as f:
+                    for chunk in resp.iter_bytes(chunk_size=8192):
+                        f.write(chunk)
+            except Exception as e:
+                if input_path.exists():
+                    input_path.unlink()
+                raise HTTPException(status_code=400, detail=f"Failed to download video: {str(e)}")
+
+    if not input_path:
+            raise HTTPException(status_code=400, detail="No video input provided")
 
     if callback_url:
         task_id = task_manager.create_task(callback_url=callback_url)
