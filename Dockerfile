@@ -26,7 +26,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Preload PaddleOCR models
 COPY preload_models.py .
-RUN python preload_models.py && rm preload_models.py
+# RUN python preload_models.py && rm preload_models.py
 
 # Create output directory
 RUN mkdir -p output
