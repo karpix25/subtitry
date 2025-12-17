@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
 import tempfile
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Optional
 
@@ -18,7 +20,19 @@ from loguru import logger
 from .task_manager import TaskManager
 from .video_processor import VideoProcessingOptions, VideoProcessor
 
-app = FastAPI(title="Subtitle Cleaner", version="0.1.0")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Start background cleanup task
+    task = asyncio.create_task(_cleanup_loop())
+    yield
+    # Cancel task on shutdown
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+app = FastAPI(title="Subtitle Cleaner", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -220,8 +234,37 @@ def _post_callback(url: str, payload: dict) -> None:
         logger.error("Callback to %s failed: %s", url, exc)
 
 
-def _log_future_exception(future) -> None:
-    try:
-        future.result()
     except Exception as exc:  # noqa: BLE001
         logger.error("Background task raised: %s", exc)
+
+
+async def _cleanup_loop() -> None:
+    """Periodically clean up old files in OUTPUT_DIR."""
+    logger.info("Starting cleanup background task")
+    while True:
+        try:
+            await asyncio.sleep(600)  # Check every 10 minutes
+            now = time.time()
+            cutoff = now - 3600  # 1 hour retention
+            
+            count = 0
+            for file_path in OUTPUT_DIR.glob("*"):
+                if file_path.is_file():
+                    stat = file_path.stat()
+                    # Check modified time
+                    if stat.st_mtime < cutoff:
+                        try:
+                            file_path.unlink()
+                            count += 1
+                        except Exception as e:
+                            logger.warning(f"Failed to delete {file_path}: {e}")
+            
+            if count > 0:
+                logger.info(f"Cleaned up {count} old files")
+                
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"Error in cleanup loop: {e}")
+            await asyncio.sleep(60)  # Wait a bit on error before retrying
+
