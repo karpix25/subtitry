@@ -239,16 +239,10 @@ class VideoProcessor:
         # The underlying OCR models are cached by TextDetector._get_ocr
         detector = TextDetector(languages=("en", "ru"), language_hint=options.language_hint)
 
-        # Use H.264 codec for better compatibility
-        # Try avc1 first, fallback to mp4v if not available
+        # Use mp4v codec (MPEG-4) which is widely supported in opencv-headless
         temp_output = output_path.with_suffix(".temp.mp4")
-        fourcc = cv2.VideoWriter_fourcc(*"avc1")
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
         writer = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
-        
-        if not writer.isOpened():
-            # Fallback to mp4v
-            fourcc = cv2.VideoWriter_fourcc(*"mp4v")
-            writer = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
             
         if not writer.isOpened():  # pragma: no cover - depends on system codecs
             raise ValueError("Unable to open output writer")
