@@ -257,6 +257,9 @@ def _post_callback(url: str, payload: dict) -> None:
         logger.error("Callback to %s failed: %s", url, exc)
 
 
+def _log_future_exception(future) -> None:
+    try:
+        future.result()
     except Exception as exc:  # noqa: BLE001
         logger.error("Background task raised: %s", exc)
 
