@@ -23,6 +23,7 @@ from .video_processor import VideoProcessingOptions, VideoProcessor
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Start background cleanup task
+    logger.info("Starting Subtitle Cleaner v1.1 - Fixes Applied")
     task = asyncio.create_task(_cleanup_loop())
     yield
     # Cancel task on shutdown
