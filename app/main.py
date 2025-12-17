@@ -225,10 +225,12 @@ def _process_async_task(
     debug: bool = True,
 ) -> None:
     start_time = time.perf_counter()
+    logger.info(f"Task {task_id}: Processing started for {input_path.name}")
     task_manager.mark_processing(task_id)
     try:
         stats = processor.process_video(input_path, output_path, options, debug=debug)
         elapsed_ms = int((time.perf_counter() - start_time) * 1000)
+        logger.info(f"Task {task_id}: Completed in {elapsed_ms}ms. Output: {output_path}")
         payload = {
             "task_id": task_id,
             "status": "completed",
