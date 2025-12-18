@@ -461,6 +461,18 @@ class VideoProcessor:
         new_y1 = max(0, y1 - pad_y)
         new_x2 = min(frame_width, x2 + pad_x)
         new_y2 = min(frame_height, y2 + pad_y)
+
+        # Stabilization: If text is roughly centered, force a minimum width of 50% of screen.
+        # This prevents "Short->Long" lag because the box is always at least 50% wide.
+        center_x = (new_x1 + new_x2) / 2
+        if abs(center_x - frame_width / 2) < (frame_width * 0.20):  # Within center 40%
+            min_w = frame_width * 0.50
+            current_w = new_x2 - new_x1
+            if current_w < min_w:
+                diff = min_w - current_w
+                new_x1 = max(0, new_x1 - diff / 2)
+                new_x2 = min(frame_width, new_x2 + diff / 2)
+
         expanded["bbox"] = [new_x1, new_y1, new_x2, new_y2]
         return expanded
 
