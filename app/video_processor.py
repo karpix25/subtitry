@@ -69,8 +69,20 @@ class TextTracker:
             
             if track.classification == "subtitle":
                 active_subtitles.append(track)
+        
+        # Prune old tracks periodically (every 100 frames ~ 4s) to save memory
+        if frame_idx % 100 == 0:
+            self._prune_tracks(frame_idx)
                 
         return self.tracks
+
+    def _prune_tracks(self, frame_idx: int) -> None:
+        """Remove tracks that haven't been seen for a long time."""
+        keep_threshold = self.fps * 10.0 # Keep for 10 seconds
+        self.tracks = [
+            t for t in self.tracks 
+            if not t.frames or (frame_idx - t.frames[-1]) < keep_threshold
+        ]
 
     def predict_only(self, frame_idx: int) -> None:
         pass

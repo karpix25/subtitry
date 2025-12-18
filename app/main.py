@@ -231,6 +231,8 @@ def get_task(task_id: str) -> JSONResponse:
     return JSONResponse(record)
 
 
+import gc
+
 def _process_async_task(
     *,
     task_id: str,
