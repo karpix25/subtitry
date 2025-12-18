@@ -21,7 +21,7 @@ class VideoProcessingOptions:
     max_resolution: int = 1080
     inpaint_radius: int = 4
     subtitle_intensity_threshold: Optional[float] = None
-    keyframe_interval: float = 0.1  # seconds between text detection
+    keyframe_interval: float = 0.0  # Process every frame for instant response
     bbox_padding: float = 0.45
     language_hint: str = "auto"
     subtitle_region_height: float = 0.45
