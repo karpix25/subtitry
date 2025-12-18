@@ -1,10 +1,8 @@
 import os
 import tarfile
-try:
-    import requests
-except ImportError as e:
-    print(f"CRITICAL ERROR: Failed to import requests: {e}")
-    exit(1)
+import urllib.request
+import urllib.error
+import sys
 from pathlib import Path
 
 # PaddleOCR default cache structure
@@ -24,63 +22,86 @@ MODELS = {
     }
 }
 
-# Mapping for 'ru' lang in directory structure
-# When lang='ru', Paddle looks in 'rec/multilingual/Multilingual_PP-OCRv3_rec_infer' 
-# OR 'rec/cyrillic/...' depending on version.
-# PP-OCRv3 usually uses 'Multilingual' for non-Latin.
-# We will download to standard locations.
-
 def download_and_extract(url, category, subdir):
-    filename = url.split("/")[-1]
-    model_name = filename.replace(".tar", "")
-    
-    # PaddleOCR Structure: BASE / category / subdir / model_name / filename
-    # Example: .../whl/det/en/en_PP-OCRv3_det_infer/en_PP-OCRv3_det_infer.tar
-    
-    parent_dir = BASE_DIR / category / subdir
-    model_dir = parent_dir / model_name
-    model_dir.mkdir(parents=True, exist_ok=True)
-    
-    tar_path = model_dir / filename
-    
-    print(f"Downloading {url} to {tar_path}...")
+    print(f"[START] Processing {url}")
     try:
-        with requests.get(url, stream=True) as r:
-            r.raise_for_status()
-            with open(tar_path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192): 
-                    f.write(chunk)
-                    
-        print(f"Extracting {tar_path}...")
-        # Extract to parent_dir because tar usually contains the model_name directory
-        # e.g. tar contains "en_PP-OCRv3_det_infer/..." and we want it in ".../det/en/en_PP-OCRv3_det_infer/"
-        # extracting to parent_dir (".../det/en") will create/merge into ".../det/en/en_PP-OCRv3_det_infer/"
-        with tarfile.open(tar_path) as tar:
-            tar.extractall(path=parent_dir)
+        filename = url.split("/")[-1]
+        model_name = filename.replace(".tar", "")
+        
+        # PaddleOCR Structure: BASE / category / subdir / model_name / filename
+        
+        parent_dir = BASE_DIR / category
+        if subdir:
+            parent_dir = parent_dir / subdir
             
-        print("Done.")
+        model_dir = parent_dir / model_name
+        
+        print(f"[INFO] Creating directory: {model_dir}")
+        model_dir.mkdir(parents=True, exist_ok=True)
+        
+        tar_path = model_dir / filename
+        
+        print(f"[DOWNLOAD] Downloading to {tar_path}...")
+        
+        # Use urllib to avoid external dependencies
+        try:
+            with urllib.request.urlopen(url) as response:
+                content_length = response.getheader('Content-Length')
+                print(f"[DOWNLOAD] Content-Length: {content_length}")
+                
+                with open(tar_path, 'wb') as f:
+                    downloaded = 0
+                    block_size = 8192
+                    while True:
+                        buffer = response.read(block_size)
+                        if not buffer:
+                            break
+                        downloaded += len(buffer)
+                        f.write(buffer)
+                        
+            print(f"[DOWNLOAD] Completed. Size: {tar_path.stat().st_size} bytes")
+            
+        except urllib.error.URLError as e:
+            print(f"[ERROR] Failed to download {url}: {e}")
+            raise e
+
+        print(f"[EXTRACT] Extracting {tar_path} to {parent_dir}...")
+        try:
+            with tarfile.open(tar_path) as tar:
+                tar.extractall(path=parent_dir)
+            print("[EXTRACT] Done.")
+        except Exception as e:
+            print(f"[ERROR] Failed to extract tar: {e}")
+            raise e
+            
     except Exception as e:
-        print(f"Error processing {url}: {e}")
-        # Don't exit, try next model? No, strict.
+        print(f"[CRITICAL] Error in download_and_extract: {e}")
+        # Re-raise to ensure script exits with non-zero code
         raise e
 
 def main():
-    # 1. Detection (English/Common)
-    download_and_extract(MODELS["det"]["en"], "det", "en")
-    # 1.1 Detection (Multilingual for 'ru' support)
-    download_and_extract(MODELS["det"]["ml"], "det", "ml")
-    
-    # 2. Recognition (English)
-    download_and_extract(MODELS["rec"]["en"], "rec", "en")
-    
-    # 3. Recognition (Russian/Multilingual)
-    # PaddleOCR(lang='ru') typically maps to 'multilingual' structure in v3
-    download_and_extract(MODELS["rec"]["ru"], "rec", "multilingual")
-    
-    # 4. Classification
-    # CLS model is usually language-agnostic in path (or uses flat structure under cls)
-    # Error expected: .../whl/cls/ch_ppocr_mobile_v2.0_cls_infer/...
-    download_and_extract(MODELS["cls"]["ch"], "cls", "")
+    print("--- Starting PaddleOCR Model Download ---")
+    try:
+        # 1. Detection (English/Common) - v3
+        download_and_extract(MODELS["det"]["en"], "det", "en")
+        
+        # 1.1 Detection (Multilingual for 'ru' support) - v3
+        download_and_extract(MODELS["det"]["ml"], "det", "ml")
+        
+        # 2. Recognition (English) - v4
+        download_and_extract(MODELS["rec"]["en"], "rec", "en")
+        
+        # 3. Recognition (Russian/Multilingual) - v3
+        download_and_extract(MODELS["rec"]["ru"], "rec", "multilingual")
+        
+        # 4. Classification - v2 (No subdir)
+        download_and_extract(MODELS["cls"]["ch"], "cls", "")
+        
+        print("--- All Downloads Completed Successfully ---")
+        
+    except Exception as e:
+        print(f"--- FAILURE: {e} ---")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
