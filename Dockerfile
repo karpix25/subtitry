@@ -37,5 +37,9 @@ COPY . .
 # Expose port
 EXPOSE 8000
 
+# Fix for "primitive descriptor" error on some CPUs (Disables MKLDNN optimizations)
+ENV FLAGS_use_mkldnn=0
+ENV FLAGS_enable_mkldnn=0
+
 # Start command
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
