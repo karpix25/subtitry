@@ -139,11 +139,12 @@ class TextDetector:
                 
                 if abs(center_y - cand_center_y) < (avg_height * y_tolerance):
                     # Check horizontal proximity (allow small gap or overlap)
-                    # Gap threshold: 2.5 * height (aggressive merge to form full sentences)
+                    # Gap threshold: 50.0 * height (Infinite bridge: merge EVERYTHING on the same line)
+                    # This ensures that "THE   I    TANT" becomes one solid bar, hiding missing letters.
                     gap = max(0, cx1 - x2) 
                     overlap = max(0, min(x2, cx2) - max(x1, cx1))
                     
-                    if gap < (avg_height * 2.5) or overlap > 0:
+                    if gap < (avg_height * 50.0) or overlap > 0:
                         # Merge
                         x1 = min(x1, cx1)
                         y1 = min(y1, cy1)
