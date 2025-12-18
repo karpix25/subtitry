@@ -280,11 +280,9 @@ class VideoProcessor:
                 if not is_keyframe and frame_idx > 0:
                      tracker.predict_only(frame_idx)
 
-                # Get active tracks with low latency (approx 2 frames)
-                # Allow instant activation (min_lifetime=0) for the first 30 frames to catch start subtitles
-                min_life = 0.08
-                if frame_idx < 30:
-                    min_life = 0.0
+                # Get active tracks with ZERO latency
+                # We trust the classifier/NMS enough to allow instant activation.
+                min_life = 0.0 
                 
                 active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=min_life)
                 
