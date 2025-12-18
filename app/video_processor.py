@@ -368,6 +368,36 @@ class VideoProcessor:
             # If ffmpeg fails, just rename temp file
             temp_output.rename(output_path)
 
+        # Calculate global detected region (union of all subtitle tracks)
+        min_x, min_y = width, height
+        max_x, max_y = 0, 0
+        found_subtitles = False
+
+        for track in tracker.tracks:
+            if track.classification == "subtitle" and track.boxes:
+                found_subtitles = True
+                for bbox in track.boxes:
+                    bx1, by1, bx2, by2 = bbox
+                    min_x = min(min_x, bx1)
+                    min_y = min(min_y, by1)
+                    max_x = max(max_x, bx2)
+                    max_y = max(max_y, by2)
+        
+        detected_region = None
+        if found_subtitles:
+            # Ensure valid bounds (clamp to frame)
+            min_x = max(0, int(min_x))
+            min_y = max(0, int(min_y))
+            max_x = min(width, int(max_x))
+            max_y = min(height, int(max_y))
+            
+            detected_region = {
+                "x": min_x,
+                "y": min_y,
+                "width": max_x - min_x,
+                "height": max_y - min_y
+            }
+
         duration = metadata.get("duration") or (frame_idx / fps)
         return {
             "frames": frame_idx,
@@ -375,6 +405,7 @@ class VideoProcessor:
             "fps": fps,
             "duration": duration,
             "keyframes_analyzed": keyframes_analyzed,
+            "detected_region": detected_region,
         }
 
     def preview_frame(
