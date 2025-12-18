@@ -26,6 +26,7 @@ class TextDetector:
             "lang": lang,
             "det_db_unclip_ratio": 1.6,
             "use_angle_cls": False,
+            "det_limit_side_len": 2500, # Process full 1080p/2K resolution without downscaling
             "show_log": False
         }
         
