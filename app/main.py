@@ -258,8 +258,10 @@ def _process_async_task(
 
 def _post_callback(url: str, payload: dict) -> None:
     try:
-        response = httpx.post(url, json=payload, timeout=10)
+        logger.info(f"Sending callback to {url} with status {payload.get('status')}")
+        response = httpx.post(url, json=payload, timeout=30) # Increased timeout
         response.raise_for_status()
+        logger.info(f"Callback successful: {response.status_code}")
     except Exception as exc:  # noqa: BLE001
         logger.error("Callback to %s failed: %s", url, exc)
 
