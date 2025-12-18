@@ -17,8 +17,23 @@ class TextDetector:
     @lru_cache(maxsize=4)
     def _get_ocr(lang: str) -> Any:  # pragma: no cover - expensive import
         from paddleocr import PaddleOCR  # type: ignore
-        # Tighten unclip ratio to get precise bounding boxes (default is 1.5)
-        return PaddleOCR(lang=lang, det_db_unclip_ratio=1.05)
+        
+        kwargs = {
+            "lang": lang,
+            "det_db_unclip_ratio": 1.05,
+            "use_angle_cls": False,
+            "show_log": False
+        }
+        
+        if lang == 'ru':
+            # Force usage of the manually downloaded Cyrillic model (v3 CRNN)
+            # because the default 'Multilingual' model for 'ru' causes 404s or shape mismatches.
+            # We explicitly define the path, version, and algorithm to ensure compatibility.
+            kwargs["rec_model_dir"] = "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer"
+            kwargs["ocr_version"] = "PP-OCRv3"
+            kwargs["rec_algorithm"] = "CRNN"
+            
+        return PaddleOCR(**kwargs)
 
     def detect_text(self, frame: np.ndarray, min_score: float = 0.5, min_size_px: int = 12, 
                     min_size_ratio: float = 0.02, nms_iou_threshold: float = 0.35,
