@@ -14,6 +14,7 @@ class TextDetector:
         self.language_hint = language_hint
 
     @staticmethod
+    @lru_cache(maxsize=4)
     def _get_ocr(lang: str) -> Any:  # pragma: no cover - expensive import
         from paddleocr import PaddleOCR  # type: ignore
         
