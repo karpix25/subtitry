@@ -67,10 +67,16 @@ async def clean_video(
     language_hint: str = Form("auto"),
     video_url: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None),
-    debug: bool = Form(True),
+    debug: bool = Form(False), # Default to False for production behavior
     dual_mode: bool = Form(False),
+    dual_output: bool = Form(False), # Alias
     request: Request = None,
 ) -> JSONResponse:
+    # Resolve aliases
+    effective_dual_mode = dual_mode or dual_output
+    
+    logger.info(f"Received clean_video request: debug={debug}, dual_mode={effective_dual_mode} (raw: mode={dual_mode}, output={dual_output})")
+
     if file is None and video_url is None:
         raise HTTPException(status_code=400, detail="Either file upload or video_url is required")
 
@@ -126,7 +132,7 @@ async def clean_video(
                     callback_url=callback_url,
                     base_url=str(request.base_url) if request else "",
                     debug=debug,
-                    dual_mode=dual_mode,
+                    dual_mode=effective_dual_mode,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
