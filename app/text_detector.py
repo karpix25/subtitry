@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Tuple
 import numpy as np
 
 
+import threading
+
+_OCR_LOCK = threading.Lock()
+
 class TextDetector:
     """Multi-language OCR with auto-detection and filtering."""
 
@@ -186,7 +190,11 @@ class TextDetector:
     def _detect_single_language(self, frame: np.ndarray, lang: str) -> List[Dict[str, Any]]:
         """Detect text in a single language."""
         ocr = self._get_ocr(lang)
-        results = ocr.ocr(frame)
+        
+        # Serialize access to shared PaddleOCR instance to prevent threading issues
+        with _OCR_LOCK:
+            results = ocr.ocr(frame)
+            
         detections: List[Dict[str, Any]] = []
         
         # Handle None or empty results
