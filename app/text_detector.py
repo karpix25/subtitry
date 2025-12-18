@@ -26,7 +26,7 @@ class TextDetector:
             "lang": lang,
             "det_db_unclip_ratio": 1.6,
             "use_angle_cls": False,
-            "det_limit_side_len": 2500, # Process full 1080p/2K resolution without downscaling
+            "det_limit_side_len": 1536, # Reduced from 2500 to 1536 to speed up CPU processing (15m -> 5m)
             "show_log": False
         }
         
