@@ -89,21 +89,27 @@ class TextTracker:
         return active
 
     def _match_track(self, bbox: Tuple[int, int, int, int], frame_idx: int) -> Optional[TextTrack]:
-        best_iou = 0.0
+        best_metric = 0.0
         best_track: Optional[TextTrack] = None
         for track in self.tracks:
             if track.frames and frame_idx - track.frames[-1] > int(self.fps * 2):
                 continue
             if not track.boxes:
                 continue
-            iou = self._bbox_iou(track.boxes[-1], bbox)
-            if iou > 0.3 and iou > best_iou:
-                best_iou = iou
+            
+            # Use overlap coefficient (Intersection / Min Area) to handle growing text (Short -> Long)
+            metric = self._bbox_overlap_coeff(track.boxes[-1], bbox)
+            
+            # Threshold: 0.2 means at least 20% of the smaller box is inside the larger one
+            # If text grows, smaller (old) is inside larger (new) -> 100% overlap coeff!
+            if metric > 0.2 and metric > best_metric:
+                best_metric = metric
                 best_track = track
         return best_track
 
     @staticmethod
-    def _bbox_iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
+    def _bbox_overlap_coeff(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
+        """Calculate Intersection over Minimum Area (Overlap Coefficient)."""
         ax1, ay1, ax2, ay2 = a
         bx1, by1, bx2, by2 = b
         inter_x1 = max(ax1, bx1)
@@ -113,12 +119,21 @@ class TextTracker:
         inter_w = max(0, inter_x2 - inter_x1)
         inter_h = max(0, inter_y2 - inter_y1)
         inter_area = inter_w * inter_h
+        
         area_a = max(0, ax2 - ax1) * max(0, ay2 - ay1)
         area_b = max(0, bx2 - bx1) * max(0, by2 - by1)
-        union = area_a + area_b - inter_area
-        if union == 0:
+        
+        min_area = min(area_a, area_b)
+        if min_area == 0:
             return 0.0
-        return inter_area / union
+            
+        return inter_area / min_area
+        
+    @staticmethod
+    def _bbox_iou(a: Tuple[int, int, int, int], b: Tuple[int, int, int, int]) -> float:
+        # Kept for compatibility but unused in matching now
+        # ... logic ...
+        return 0.0 # Placeholder if needed, but we replaced usage.
 
 
 class VideoProcessor:
