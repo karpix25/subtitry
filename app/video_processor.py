@@ -252,7 +252,8 @@ class VideoProcessor:
                 else:
                     tracker.predict_only(frame_idx)
 
-                active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=0.3)
+                # Get active tracks with low latency (approx 2 frames)
+                active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=0.08)
                 
                 current_boxes = []
                 for track in active_tracks:
