@@ -95,7 +95,8 @@ class TextTracker:
             if not track.frames:
                 continue
             last_seen = track.frames[-1]
-            if (frame_idx - last_seen) < (self.fps * 2.0):
+            # Persistence: 0.5s (was 2.0s). Since we scan every frame now, lengthy persistence causes ghost boxes.
+            if (frame_idx - last_seen) < (self.fps * 0.5):
                  if track.lifetime >= min_frames:
                      active.append(track)
         return active
