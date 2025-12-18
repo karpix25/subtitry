@@ -223,10 +223,17 @@ class VideoProcessor:
         return {"vertical": "bottom", "height": 0.45}
 
     def process_video(
-        self, input_path: Path, output_path: Path, options: VideoProcessingOptions, debug: bool = False, limit_frames: int = 0
-    ) -> Dict[str, float]:
+        self, input_path: Path, output_path: Path, options: VideoProcessingOptions, debug: bool = False, limit_frames: int = 0, dual_mode: bool = False
+    ) -> Dict[str, Any]:
         """
         Process the video: detect subtitles, track them, and fill them with dominant background color.
+        
+        Args:
+            input_path: Path to input video
+            output_path: Path to save result
+            options: Processing options
+            debug: If True, draws green bounding boxes. If False, fills boxes with solid color.
+            dual_mode: If True, generates BOTH clean and debug versions. debug flag determines primary return stats/logic slightly.
         """
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
@@ -237,17 +244,30 @@ class VideoProcessor:
         # Use mp4v for compatibility
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         
-        temp_output = output_path.with_name(f"temp_{output_path.name}")
-        writer = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
+        # Setup writers
+        writers = {}
+        output_paths = {}
         
-        if not writer.isOpened():
+        temp_output = output_path.with_name(f"temp_{output_path.name}")
+        writers['main'] = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
+        output_paths['main'] = (temp_output, output_path)
+
+        if not writers['main'].isOpened():
              # Fallback
              fourcc = cv2.VideoWriter_fourcc(*'avc1')
-             writer = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
+             writers['main'] = cv2.VideoWriter(str(temp_output), fourcc, fps, (width, height))
+        
+        if dual_mode:
+            # Determine path for debug version (e.g., "cleaned_..._debug.mp4")
+            # If output_path is "output/cleaned_taskId.mp4", debug is "output/cleaned_taskId_debug.mp4"
+            debug_path = output_path.with_name(f"{output_path.stem}_debug{output_path.suffix}")
+            temp_debug = debug_path.with_name(f"temp_{debug_path.name}")
+            writers['debug'] = cv2.VideoWriter(str(temp_debug), fourcc, fps, (width, height))
+            output_paths['debug'] = (temp_debug, debug_path)
 
         tracker = TextTracker(fps=fps)
         detector = TextDetector(language_hint=options.language_hint)
-        mask_builder = MaskBuilder() # Used if we fall back to complex masking, but here we do boxes
+        # mask_builder = MaskBuilder() # Unused now generally
         
         # Initialize classifier if needed
         classifier = SubtitleClassifier(threshold=options.subtitle_intensity_threshold) if options.subtitle_intensity_threshold else None
@@ -270,13 +290,7 @@ class VideoProcessor:
                 
                 is_keyframe = (frame_idx % max(1, int(fps * options.keyframe_interval))) == 0
                 
-                if options.force_region_mask:
-                     # Hard mask mode (not implemented for solid fill really, but let's assume standard behavior)
-                     # For legacy support, if force_region, we just don't detect.
-                     # But current request is solid fill boxes.
-                     # Let's ignore force_region_mask for now or handle it by making a massive box.
-                     pass 
-
+                # Standard detection logic
                 if is_keyframe:
                     detections = self._detect_with_stroke(
                         frame, detector, classifier, 
@@ -300,60 +314,101 @@ class VideoProcessor:
                 if current_boxes:
                     last_boxes = current_boxes
                 elif is_keyframe:
-                    # Clear boxes if keyframe says no subtitles
                      if not active_tracks:
                         last_boxes = []
                 
                 current_boxes_to_draw = current_boxes if current_boxes else last_boxes
 
-                if debug:
-                    # Visualization mode: Draw Green Boxes
-                    out_frame = frame.copy()
-                    if current_boxes_to_draw:
+                # --- WRITING FRAMES ---
+                
+                # Logic:
+                # If dual_mode is True:
+                #   writers['main'] gets the CLEAN (Solid Fill) version (unless debug was True passed, but usually dual_mode implies we want both specific roles)
+                #   writers['debug'] gets the DEBUG (Green Box) version
+                # If dual_mode is False:
+                #   writers['main'] gets whatever 'debug' flag says (Green Box if debug=True, Solid Fill if debug=False)
+                
+                # Calculate fill color once if needed
+                fill_color = None
+                if (dual_mode or not debug) and current_boxes_to_draw:
+                     fill_color = self._get_dominant_color(frame, subtitle_region_height=0.45)
+                
+                # 1. Main Writer
+                if dual_mode:
+                    # In dual mode, 'main' is ALWAYS Clean/Solid Fill
+                    frame_clean = frame.copy()
+                    if current_boxes_to_draw and fill_color:
                         for bbox in current_boxes_to_draw:
                             x1, y1, x2, y2 = map(int, bbox)
-                            cv2.rectangle(out_frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                            subtitle_frames += 1
-                    writer.write(out_frame)
+                            cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
+                        subtitle_frames += 1 # Count frames where we did work
+                    writers['main'].write(frame_clean)
                 else:
-                    # Solid Fill Mode: Fill with dominant background color
-                    cleaned = frame.copy()
-                    
+                    # Single mode: respect 'debug' flag
+                    if debug:
+                        # Visualization
+                        frame_viz = frame.copy()
+                        if current_boxes_to_draw:
+                            for bbox in current_boxes_to_draw:
+                                x1, y1, x2, y2 = map(int, bbox)
+                                cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                                subtitle_frames += 1
+                        writers['main'].write(frame_viz)
+                    else:
+                        # Clean
+                        frame_clean = frame.copy()
+                        if current_boxes_to_draw and fill_color:
+                            for bbox in current_boxes_to_draw:
+                                x1, y1, x2, y2 = map(int, bbox)
+                                cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
+                            subtitle_frames += 1
+                        writers['main'].write(frame_clean)
+                
+                # 2. Debug Writer (Only in Dual Mode)
+                if dual_mode and 'debug' in writers:
+                    frame_viz = frame.copy()
                     if current_boxes_to_draw:
-                        # Find dominant color for this frame (bottom 45%)
-                        fill_color = self._get_dominant_color(frame, subtitle_region_height=0.45)
-                        
                         for bbox in current_boxes_to_draw:
                             x1, y1, x2, y2 = map(int, bbox)
-                            
-                            # Expand box slightly to ensure coverage? 
-                            # User said "inside green frames", but standard practice is to cover slightly MORE.
-                            # But green frames are already padded by options.bbox_padding if set.
-                            # We use exact coordinates.
-                            
-                            # Draw filled rectangle
-                            cv2.rectangle(cleaned, (x1, y1), (x2, y2), fill_color, -1)
-                        subtitle_frames += 1
-                    
-                    writer.write(cleaned)
+                            cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    writers['debug'].write(frame_viz)
 
                 frame_idx += 1
                 
         finally:
             cap.release()
-            writer.release()
+            for w in writers.values():
+                w.release()
             
         # Metadata handling
         metadata = {}
-        if not debug:
-            # Copy audio from original
-            self._copy_audio(input_path, temp_output, output_path)
-            # Get processed video metadata
-            metadata = self._get_video_metadata(output_path)
+        
+        # Post-process Main output
+        tm_main, out_main = output_paths['main']
+        if dual_mode or not debug:
+             # Need audio copy for cleaned version
+             self._copy_audio(input_path, tm_main, out_main)
+             metadata = self._get_video_metadata(out_main)
         else:
-            # If ffmpeg fails or debug mode, just rename temp file
-            if temp_output.exists():
-                temp_output.rename(output_path)
+             # Debug version in single mode usually skips audio or just renames
+             if tm_main.exists():
+                tm_main.rename(out_main)
+        
+        start_stats = {
+            "frames": frame_idx,
+            "subtitle_frames": subtitle_frames,
+            "fps": fps,
+            "duration": metadata.get("duration") or (frame_idx / fps),
+            "keyframes_analyzed": keyframes_analyzed,
+        }
+
+        # Post-process Debug output (if dual)
+        if dual_mode and 'debug' in output_paths:
+            tm_debug, out_debug = output_paths['debug']
+            if tm_debug.exists():
+                tm_debug.rename(out_debug) # Debug usually no audio needed, or copy if desired. 
+                # Let's simple rename for speed.
+                start_stats["debug_output_path"] = str(out_debug) # Return path to debug file
 
         # Calculate global detected region (union of all subtitle tracks)
         min_x, min_y = width, height
@@ -384,15 +439,8 @@ class VideoProcessor:
                 "height": max_y - min_y
             }
 
-        duration = metadata.get("duration") or (frame_idx / fps)
-        return {
-            "frames": frame_idx,
-            "subtitle_frames": subtitle_frames,
-            "fps": fps,
-            "duration": duration,
-            "keyframes_analyzed": keyframes_analyzed,
-            "detected_region": detected_region,
-        }
+        start_stats["detected_region"] = detected_region
+        return start_stats
 
     def preview_frame(
         self, input_path: Path, frame_number: int, options: VideoProcessingOptions
