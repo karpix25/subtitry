@@ -92,7 +92,7 @@ def main():
         download_and_extract(MODELS["rec"]["en"], "rec", "en")
         
         # 3. Recognition (Russian/Multilingual) - v3
-        download_and_extract(MODELS["rec"]["ru"], "rec", "multilingual")
+        download_and_extract(MODELS["rec"]["ru"], "rec", "cyrillic")
         
         # 4. Classification - v2 (No subdir)
         download_and_extract(MODELS["cls"]["ch"], "cls", "")
