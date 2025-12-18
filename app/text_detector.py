@@ -19,7 +19,7 @@ class TextDetector:
         
         kwargs = {
             "lang": lang,
-            "det_db_unclip_ratio": 1.05,
+            "det_db_unclip_ratio": 1.6,
             "use_angle_cls": False,
             "show_log": False
         }
@@ -133,11 +133,11 @@ class TextDetector:
                 
                 if abs(center_y - cand_center_y) < (avg_height * y_tolerance):
                     # Check horizontal proximity (allow small gap or overlap)
-                    # Gap threshold: 2.0 * height (generous to allow spaces/wide gaps)
+                    # Gap threshold: 2.5 * height (aggressive merge to form full sentences)
                     gap = max(0, cx1 - x2) 
                     overlap = max(0, min(x2, cx2) - max(x1, cx1))
                     
-                    if gap < (avg_height * 1.0) or overlap > 0:
+                    if gap < (avg_height * 2.5) or overlap > 0:
                         # Merge
                         x1 = min(x1, cx1)
                         y1 = min(y1, cy1)
