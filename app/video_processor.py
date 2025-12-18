@@ -386,11 +386,16 @@ class VideoProcessor:
         return (int(dominant_color[0]), int(dominant_color[1]), int(dominant_color[2]))
 
     def _copy_audio(self, input_path: Path, video_path: Path, output_path: Path) -> None:
+        """Merge audio from input to video, transcoding video to H.264 for compatibility."""
+        # Note: We use libx264 to ensure the output is playable on all devices (Mac/iOS/Windows).
+        # -c:v copy preserves the codec (likely mp4v from cv2) which is often problematic.
         cmd = [
             "ffmpeg", "-y",
             "-i", str(video_path),
             "-i", str(input_path),
-            "-c:v", "copy",
+            "-c:v", "libx264",
+            "-preset", "faster",
+            "-crf", "23",
             "-c:a", "aac",
             "-map", "0:v:0",
             "-map", "1:a:0",
