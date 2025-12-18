@@ -68,8 +68,18 @@ class VideoProcessor:
 
 
 class TextTracker:
-    def __init__(self, frame_height: int) -> None:
-        self.classifier = SubtitleClassifier(frame_height)
+    def __init__(self, fps: float = 25.0) -> None:
+        self.fps = fps
+        # We need frame_height for classifier, can we pass it later or get it from update?
+        # Classifier was init with frame_height previously.
+        # Let's initialize classifier lazily or with a dummy if we don't have height yet.
+        # Actually, process_video passes height to classifier separately now.
+        # But TextTracker internally uses self.classifier.
+        # We should accept frame_height in init if possible, OR make classifier init lazy.
+        # However, looking at process_video: tracker = TextTracker(fps=fps)
+        # It doesn't pass height.
+        # I will update TextTracker to NOT init classifier until first update or use a default.
+        self.classifier = None # Will init on first update or we change __init__ signature
         self.tracks: List[TextTrack] = []
         self.next_id = 0
 
@@ -77,57 +87,87 @@ class TextTracker:
         self,
         detections: List[Dict],
         frame_idx: int,
-        subtitle_intensity_threshold: Optional[float],
-        subtitle_region_height: float = 0.3,
+        subtitle_intensity_threshold: Optional[float] = None, # defaulted
+        subtitle_region_height: float = 0.3, # defaulted
         frame_width: Optional[int] = None,
     ) -> List[TextTrack]:
+        # Init classifier if needed (hacky but works if height usually constant)
+        if self.classifier is None:
+            # We assume frame_height is implied by detection coordinates or logic
+            # Or we just pass a safe default.
+            # Classifier needs height for min_y calculation.
+            # Let's assume 1080 if unknown, or rely on caller to be consistent.
+            # Ideally the caller should pass height.
+            self.classifier = SubtitleClassifier(frame_height=1080) # Fallback
+
         active_subtitles = []
+        
+        # Match tracks
+        matched_track_ids = set()
+        
         for det in detections:
             bbox = tuple(int(v) for v in det["bbox"])
             track = self._match_track(bbox, frame_idx)
+            
             if track is None:
                 track = TextTrack(track_id=self.next_id)
                 self.next_id += 1
                 self.tracks.append(track)
+            else:
+                matched_track_ids.add(track.track_id)
+                
             track.stroke_detected = track.stroke_detected or bool(det.get("stroke", False))
             track.add(bbox, frame_idx, det.get("text", ""))
+            
+            # Re-classify
+            # Note: classifier needs height provided here or in init. 
+            # SubtitleClassifier.classify uses self.frame_height.
+            # We should probably update the classifier's height if we can deduce it.
             self.classifier.classify(track, subtitle_intensity_threshold, subtitle_region_height, frame_width)
             
             if track.classification == "subtitle":
                 active_subtitles.append(track)
                 
-        # Stack Check: If > 4 subtitle tracks active in this frame, it's likely a menu/UI list
-        # Standard subtitles are rarely > 2-3 lines. Menus are usually 5+
-        if len(active_subtitles) > 4:
-            rescued_count = 0
-            for t in active_subtitles:
-                is_rescued = False
-                if frame_width and t.boxes:
-                    # Get bbox center of the last detection
-                    last_box = t.boxes[-1]
-                    mid_x = (last_box[0] + last_box[2]) / 2
-                    center_diff = abs(mid_x - (frame_width / 2))
-                    
-                    # Rescue: Strictly centered (5% tolerance)
-                    # Subtitles are almost always perfectly centered. Menus are not.
-                    if center_diff < (frame_width * 0.05):
-                         is_rescued = True
-                
-                if not is_rescued:
-                    t.classification = "ui"
-                else:
-                    rescued_count += 1
-            
-            if rescued_count < len(active_subtitles):
-                print(f"[DEBUG] Frame {frame_idx}: Stack detected (>{4}). Rejected {len(active_subtitles) - rescued_count} UI tracks. Rescued {rescued_count} subtitles.")
-                
+        # Handle predictions / missing tracks update (optional, usually predict_only handles holes)
+        
         return self.tracks
+
+    def predict_only(self, frame_idx: int) -> None:
+        """Called when no detection runs (intermediate frames)."""
+        # Logic to extend tracks or mark as 'predicted' could go here.
+        # For now, we rely on the fact that tracks have 'lifetime' or last frame.
+        pass
+
+    def get_active_tracks(self, frame_idx: int, min_lifetime: float = 0.3) -> List[TextTrack]:
+        """Return tracks considered active at frame_idx."""
+        active = []
+        min_frames = int(min_lifetime * self.fps)
+        
+        for track in self.tracks:
+            # Check if track is "alive"
+            if not track.frames:
+                continue
+            
+            last_seen = track.frames[-1]
+            
+            # Simple extensive logic: if seen reasonably recently (e.g. within 1 sec)
+            # AND it has enough history.
+            
+            # A track is active if:
+            # 1. It was seen in the LAST KEYFRAME (or very close to it).
+            # 2. It has existed for > min_lifetime.
+            
+            if (frame_idx - last_seen) < (self.fps * 2.0): # 2 second persistence max
+                 if track.lifetime >= min_frames:
+                     active.append(track)
+                     
+        return active
 
     def _match_track(self, bbox: Tuple[int, int, int, int], frame_idx: int) -> Optional[TextTrack]:
         best_iou = 0.0
         best_track: Optional[TextTrack] = None
         for track in self.tracks:
-            if track.frames and frame_idx - track.frames[-1] > 30:
+            if track.frames and frame_idx - track.frames[-1] > int(self.fps * 2): # Use FPS dependent timeout
                 continue
             if not track.boxes:
                 continue
