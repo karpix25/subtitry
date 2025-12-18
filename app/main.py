@@ -68,7 +68,7 @@ async def clean_video(
     video_url: Optional[str] = Form(None),
     callback_url: Optional[str] = Form(None),
     debug: bool = Form(True),
-    dual_output: bool = Form(False),
+    dual_mode: bool = Form(False),
     request: Request = None,
 ) -> JSONResponse:
     if file is None and video_url is None:
@@ -126,7 +126,7 @@ async def clean_video(
                     callback_url=callback_url,
                     base_url=str(request.base_url) if request else "",
                     debug=debug,
-                    dual_mode=dual_output,
+                    dual_mode=dual_mode,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
