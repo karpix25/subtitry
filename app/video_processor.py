@@ -35,35 +35,12 @@ class VideoProcessor:
         self, frame: np.ndarray, detector: TextDetector, subtitle_region_height: float = 0.3, min_score: float = 0.5
     ) -> List[Dict]:
         """Run detection and calculate stroke width."""
-        detections = detector.detect_text(frame, min_score=min_score)
-        # Note: region filtering is now inside detector.detect_text via subtitle_region_height hack passing
-        # Wait, I previously modified detect_text to filter internally using `subtitle_region_height`?
-        # Let's check detect_text signature in my memory or file view.
-        # Yes, I modified detect_text to take subtitle_region_height.
-        # But here I am calling it without it!
-        # The previous tool call view of `VideoProcessor` showed:
-        # detections = self._detect_with_stroke(processed_frame, detector, subtitle_region_height=options.subtitle_region_height)
-        # But _detect_with_stroke implementation called detector.detect_text(frame) without region!
-        # Ah, I need to check `_detect_with_stroke` implementation again.
-        
-        # Checking implementation of _detect_with_stroke from Step 77 context:
-        # It was: detector.detect_text(frame)
-        
-        # Checking implementation of detect_text from Step 196:
-        # It takes subtitle_region_height!
-        
-        # So I need to pass it here too.
-        # And min_score.
-        
+        # Forward arguments correctly to TextDetector
         detections = detector.detect_text(
              frame, 
-             subtitle_region_height=subtitle_region_height,
-             min_score=min_score
+             min_score=min_score,
+             subtitle_region_height=subtitle_region_height
         )
-        
-        for det in detections:
-             # Calculate stroke...
-             pass
         return detections
 
 
@@ -309,8 +286,8 @@ class VideoProcessor:
         detector = TextDetector(language_hint=options.language_hint)
         # mask_builder = MaskBuilder() # Unused now generally
         
-        # Initialize classifier if needed
-        classifier = SubtitleClassifier(threshold=options.subtitle_intensity_threshold) if options.subtitle_intensity_threshold else None
+        # Initialize classifier if needed (though tracker handles it too now)
+        # classifier = SubtitleClassifier(frame_height=height) # Tracker creates one
 
         frame_idx = 0
         subtitle_frames = 0
@@ -333,11 +310,17 @@ class VideoProcessor:
                 # Standard detection logic
                 if is_keyframe:
                     detections = self._detect_with_stroke(
-                        frame, detector, classifier, 
-                        options.bbox_padding, options.subtitle_intensity_threshold,
-                        subtitle_region_height=0.45 
+                        frame, 
+                        detector, 
+                        subtitle_region_height=0.45,
+                        min_score=options.min_score if hasattr(options, 'min_score') else 0.5 
                     )
-                    tracker.update(detections, frame_idx)
+                    
+                    # Pass classification params to tracker update
+                    tracker.update(detections, frame_idx, 
+                                   subtitle_intensity_threshold=options.subtitle_intensity_threshold,
+                                   subtitle_region_height=0.45,
+                                   frame_width=width)
                     keyframes_analyzed += 1
                 else:
                     tracker.predict_only(frame_idx)
@@ -363,10 +346,8 @@ class VideoProcessor:
                 
                 # Logic:
                 # If dual_mode is True:
-                #   writers['main'] gets the CLEAN (Solid Fill) version (unless debug was True passed, but usually dual_mode implies we want both specific roles)
+                #   writers['main'] gets the CLEAN (Solid Fill) version
                 #   writers['debug'] gets the DEBUG (Green Box) version
-                # If dual_mode is False:
-                #   writers['main'] gets whatever 'debug' flag says (Green Box if debug=True, Solid Fill if debug=False)
                 
                 # Calculate fill color once if needed
                 fill_color = None
@@ -381,7 +362,7 @@ class VideoProcessor:
                         for bbox in current_boxes_to_draw:
                             x1, y1, x2, y2 = map(int, bbox)
                             cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
-                        subtitle_frames += 1 # Count frames where we did work
+                        subtitle_frames += 1 
                     writers['main'].write(frame_clean)
                 else:
                     # Single mode: respect 'debug' flag
