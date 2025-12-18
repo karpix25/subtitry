@@ -33,6 +33,13 @@ class TextDetector:
             kwargs["ocr_version"] = "PP-OCRv3"
             kwargs["rec_algorithm"] = "CRNN"
             
+        elif lang == 'en':
+            # Force usage of v3 English model to avoid LCNetV3 (v4) crashes on CPUs without AVX/MKLDNN.
+            # v3 English uses SVTR_LCNet theoretically, but the v3 variant is lighter/different than v4.
+            # We explicitly invoke it to match what we downloaded.
+            kwargs["rec_model_dir"] = "/root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer"
+            kwargs["ocr_version"] = "PP-OCRv3"
+            
         return PaddleOCR(**kwargs)
 
     def detect_text(self, frame: np.ndarray, min_score: float = 0.5, min_size_px: int = 12, 
