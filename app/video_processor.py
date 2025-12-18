@@ -276,11 +276,16 @@ class VideoProcessor:
                                    subtitle_region_height=0.45,
                                    frame_width=width)
                     keyframes_analyzed += 1
-                else:
-                    tracker.predict_only(frame_idx)
+                if not is_keyframe and frame_idx > 0:
+                     tracker.predict_only(frame_idx)
 
                 # Get active tracks with low latency (approx 2 frames)
-                active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=0.08)
+                # Allow instant activation (min_lifetime=0) for the first 30 frames to catch start subtitles
+                min_life = 0.08
+                if frame_idx < 30:
+                    min_life = 0.0
+                
+                active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=min_life)
                 
                 current_boxes = []
                 for track in active_tracks:
@@ -450,7 +455,8 @@ class VideoProcessor:
         width = x2 - x1
         height = y2 - y1
         pad_x = width * padding
-        pad_y = height * padding
+        # Boost vertical padding by 50% to cover ascenders/descenders
+        pad_y = height * padding * 1.5
         new_x1 = max(0, x1 - pad_x)
         new_y1 = max(0, y1 - pad_y)
         new_x2 = min(frame_width, x2 + pad_x)
