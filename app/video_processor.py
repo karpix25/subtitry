@@ -500,9 +500,13 @@ class VideoProcessor:
         x1, y1, x2, y2 = det["bbox"]
         width = x2 - x1
         height = y2 - y1
-        pad_x = width * padding
-        # Boost vertical padding by 50% to cover ascenders/descenders
-        pad_y = height * padding * 1.5
+        
+        # Differential Padding Strategy:
+        # X-Axis: 2.0x boost to catch missing first/last letters (Edge Clipping)
+        # Y-Axis: 0.8x reduction relative to X to avoid hitting UI above/below
+        pad_x = width * padding * 2.0 
+        pad_y = height * padding * 0.8
+        
         new_x1 = max(0, x1 - pad_x)
         new_y1 = max(0, y1 - pad_y)
         new_x2 = min(frame_width, x2 + pad_x)

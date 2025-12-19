@@ -116,8 +116,9 @@ class TextDetector:
         # Cluster broken words into lines
         detections = self._cluster_lines(detections)
         
-        # Reverted: Disable vertical stacking to prevent over-grouping
-        # detections = self._cluster_stacks(detections)
+        # Re-enabled: Cluster vertically stacked lines (Paragraphs) to clean 2-line gaps
+        # Risk of hitting UI is mitigated by stricter region limit (45%)
+        detections = self._cluster_stacks(detections)
         
         # Apply NMS to remove duplicates
         detections = self._apply_nms(detections, nms_iou_threshold)
