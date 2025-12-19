@@ -1,6 +1,9 @@
-from __future__ import annotations
-
+```python
+from __future__ import shutil
 import base64
+import statistics # For robust median calculation of subtitle position
+import tempfile
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
@@ -252,10 +255,9 @@ class VideoProcessor:
         frame_buffer = [] 
         BUFFER_SIZE = 5 # Reduced from 6 to 5 to save memory (prevent SIGTERM)
         
-        # Position Stats
-        total_cx = 0.0
-        total_cy = 0.0
-        pos_count = 0
+        # Position Stats (Median lists)
+        all_cx = []
+        all_cy = []
 
         def process_buffered_frame(b_info):
              b_idx, b_frame, b_boxes = b_info
@@ -345,9 +347,8 @@ class VideoProcessor:
                         x1, y1, x2, y2 = box
                         cx = (x1 + x2) / 2
                         cy = (y1 + y2) / 2
-                        total_cx += cx
-                        total_cy += cy
-                        pos_count += 1
+                        all_cx.append(cx)
+                        all_cy.append(cy)
                 
                 # Accumulate Position Stats
                 if boxes_to_store:
@@ -410,8 +411,8 @@ class VideoProcessor:
             "duration": metadata.get("duration") or (frame_idx / fps),
             "keyframes_analyzed": keyframes_analyzed,
             "subtitle_position": {
-                "x": int(total_cx / pos_count) if pos_count > 0 else None,
-                "y": int(total_cy / pos_count) if pos_count > 0 else None
+                "x": int(statistics.median(all_cx)) if all_cx else None,
+                "y": int(statistics.median(all_cy)) if all_cy else None
             }
         }
         
