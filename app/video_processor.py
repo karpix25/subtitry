@@ -1,5 +1,6 @@
-```python
-from __future__ import shutil
+from __future__ import annotations
+
+import shutil
 import base64
 import statistics # For robust median calculation of subtitle position
 import tempfile
