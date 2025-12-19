@@ -71,6 +71,7 @@ async def clean_video(
     dual_mode: bool = Form(False),
     dual_output: bool = Form(False), # Alias
     request: Request = None,
+    callback_data: Optional[str] = Form(None),
 ) -> JSONResponse:
     # Resolve aliases
     effective_dual_mode = dual_mode or dual_output
@@ -133,6 +134,7 @@ async def clean_video(
                     base_url=str(request.base_url) if request else "",
                     debug=debug,
                     dual_mode=effective_dual_mode,
+                    callback_data=callback_data,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -243,6 +245,7 @@ def _process_async_task(
     base_url: str = "",
     debug: bool = True,
     dual_mode: bool = False,
+    callback_data: Optional[str] = None,
 ) -> None:
     start_time = time.perf_counter()
     logger.info(f"Task {task_id}: Processing started for {input_path.name}")
@@ -267,6 +270,7 @@ def _process_async_task(
             "debug_video_url": debug_url,
             "time_ms": elapsed_ms,
             "stats": stats,
+            "callback_data": callback_data,
         }
         task_manager.mark_completed(task_id, payload)
         if callback_url:
@@ -278,6 +282,7 @@ def _process_async_task(
             "task_id": task_id,
             "status": "failed",
             "error": error_message,
+             "callback_data": callback_data,
         }
         task_manager.mark_failed(task_id, error_message)
         if callback_url:
