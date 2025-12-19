@@ -24,7 +24,7 @@ class TextDetector:
         
         kwargs = {
             "lang": lang,
-            "det_db_unclip_ratio": 3.0, # Increased from 1.6 to 3.0 to aggressively inflate text and fix fragmented words
+            "det_db_unclip_ratio": 2.4, # Reduced from 3.0 to 2.4 for Stability (prevent OOM)
             "det_db_thresh": 0.1,  # Lower threshold to detect faint/blurry text
             "use_angle_cls": False,
             "det_limit_side_len": 1280, # Balanced for Speed (Real-Time goal) + Accuracy

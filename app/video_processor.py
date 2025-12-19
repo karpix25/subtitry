@@ -250,7 +250,7 @@ class VideoProcessor:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
-        BUFFER_SIZE = 6
+        BUFFER_SIZE = 5 # Reduced from 6 to 5 to save memory (prevent SIGTERM)
         
         # Position Stats
         total_cx = 0.0
@@ -377,6 +377,11 @@ class VideoProcessor:
                     if popped[2]: subtitle_frames += 1
 
                 frame_idx += 1
+                
+                # Periodic GC to prevent OOM
+                if frame_idx % 100 == 0:
+                    import gc
+                    gc.collect()
             
             # Flush Buffer
             while frame_buffer:
