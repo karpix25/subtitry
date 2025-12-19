@@ -78,8 +78,10 @@ class SubtitleClassifier:
             problems.append(f"lifetime({track.lifetime})>=3000")
         if not in_vertical_band:
             problems.append(f"y({track.avg_y:.1f})<{min_y:.1f}")
-        if track.text_len <= 2:
-            problems.append(f"len({track.text_len:.1f})<=2")
+        # Changed from <= 2 to < 1 to allow short words like "I", "A", "NO", "YC".
+        # We rely on centering and vertical position to filter noise.
+        if track.text_len < 1:
+            problems.append(f"len({track.text_len:.1f})<1")
         if not (track.stroke_detected or score_gate):
             problems.append("no_stroke")
             
