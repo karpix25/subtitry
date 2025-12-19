@@ -28,10 +28,9 @@ class VideoProcessingOptions:
     keyframe_interval: float = 0.0  # Process every frame for instant response
     bbox_padding: float = 0.60 # Reverted from 0.90 to 0.60 per user request
     language_hint: str = "auto"
-    subtitle_region_height: float = 0.8  # Increased to 80% to catch flying text starting high
+    subtitle_region_height: float = 0.45  # Reduced from 0.80 to 0.45 to exclude UI/Top text
     subtitle_region_vertical: str = "bottom"
-    min_score: float = 0.25  # Lowered to catch blurry/motion text
-    min_score: float = 0.5
+    min_score: float = 0.40  # Balanced: 0.25 (noisy) < 0.40 < 0.50 (strict)
     force_region_mask: bool = False
 
 
