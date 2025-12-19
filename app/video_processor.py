@@ -28,9 +28,9 @@ class VideoProcessingOptions:
     keyframe_interval: float = 0.0  # Process every frame for instant response
     bbox_padding: float = 0.60 # Reverted from 0.90 to 0.60 per user request
     language_hint: str = "auto"
-    subtitle_region_height: float = 0.45  # Reduced from 0.80 to 0.45 to exclude UI/Top text
+    subtitle_region_height: float = 0.50  # Increased to 50% (Half Screen) - Safer than 45%
     subtitle_region_vertical: str = "bottom"
-    min_score: float = 0.30  # Lowered from 0.40 to 0.30 to catch fading 2nd lines earlier
+    min_score: float = 0.15  # Extremely low threshold (0.15) to catch text immediately on appearance
     force_region_mask: bool = False
 
 
@@ -253,7 +253,7 @@ class VideoProcessor:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
-        BUFFER_SIZE = 8 # Increased to 8 (0.3s) to fix "lag" on fade-ins. (Singleton OCR saves RAM now)
+        BUFFER_SIZE = 12 # Extreme Buffer (0.5s) to guarantee zero latency even for slow fades
         
         # Position Stats (Median lists)
         all_cx = []
