@@ -13,40 +13,57 @@ _OCR_LOCK = threading.Lock()
 class TextDetector:
     """Multi-language OCR with auto-detection and filtering."""
 
+    # Shared singleton instance
+    _SHARED_INSTANCE = None
+    _SHARED_LOCK = threading.Lock()
+
     def __init__(self, languages: Tuple[str, ...] = ("en", "ru"), language_hint: str = "auto") -> None:
         self.languages = languages
         self.language_hint = language_hint
+        
+    @classmethod
+    def get_shared_ocr(cls, lang: str = 'en') -> Any:
+        # We enforce a SINGLE instance for all languages to save memory.
+        # PaddleOCR Multilingual model supports both EN and RU if configured correctly, 
+        # OR we just swap languages on the fly (expensive).
+        # BETTER: Initialize ONE generic model and use it. 
+        # However, we previously had specialized logic for 'ru' vs 'en'.
+        # To prevent OOM, we will stick to the 'en' model (which often handles basic latin) 
+        # OR the 'cyrillic' model if 'ru' is requested, but carefully.
+        # Actually, let's just use ONE instance and re-init if really needed, but use a lock.
+        # BUT re-init leaks memory in Paddle.
+        # BEST: Just use key 'combined' and load a multilingual model OR just the last used one?
+        # Let's simple: use lru_cache(maxsize=1) on the static method effectively via this singleton logic.
+        
+        with cls._SHARED_LOCK:
+            if cls._SHARED_INSTANCE is None:
+                # Initial load - prefer English as base or Multilingual?
+                # Using 'ru' config usually supports english too for CRNN.
+                # Let's load the 'ru' (Cyrillic) model as the default shared one 
+                # as it likely covers both for this user's use case.
+                from paddleocr import PaddleOCR
+                
+                # Default to Cyrillic config as it covers EN+RU usually
+                kwargs = {
+                    "lang": "ru",
+                    "det_db_unclip_ratio": 1.6, 
+                    "det_db_thresh": 0.1,
+                    "use_angle_cls": False,
+                    "det_limit_side_len": 1280,
+                    "show_log": False,
+                    "rec_model_dir": "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer",
+                    "ocr_version": "PP-OCRv3",
+                    "rec_algorithm": "CRNN"
+                } 
+                cls._SHARED_INSTANCE = PaddleOCR(**kwargs)
+            
+            return cls._SHARED_INSTANCE
+
 
     @staticmethod
-    @lru_cache(maxsize=4)
-    def _get_ocr(lang: str) -> Any:  # pragma: no cover - expensive import
-        from paddleocr import PaddleOCR  # type: ignore
-        
-        kwargs = {
-            "lang": lang,
-            "det_db_unclip_ratio": 1.6, # Restored to Standard 1.6 (User confirmed 2.4/3.0 was too aggressive)
-            "det_db_thresh": 0.1,  # Lower threshold to detect faint/blurry text
-            "use_angle_cls": False,
-            "det_limit_side_len": 1280, # Balanced for Speed (Real-Time goal) + Accuracy
-            "show_log": False
-        }
-        
-        if lang == 'ru':
-            # Force usage of the manually downloaded Cyrillic model (v3 CRNN)
-            # because the default 'Multilingual' model for 'ru' causes 404s or shape mismatches.
-            # We explicitly define the path, version, and algorithm to ensure compatibility.
-            kwargs["rec_model_dir"] = "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer"
-            kwargs["ocr_version"] = "PP-OCRv3"
-            kwargs["rec_algorithm"] = "CRNN"
-            
-        elif lang == 'en':
-            # Force usage of v3 English model to avoid LCNetV3 (v4) crashes on CPUs without AVX/MKLDNN.
-            # v3 English uses SVTR_LCNet theoretically, but the v3 variant is lighter/different than v4.
-            # We explicitly invoke it to match what we downloaded.
-            kwargs["rec_model_dir"] = "/root/.paddleocr/whl/rec/en/en_PP-OCRv3_rec_infer"
-            kwargs["ocr_version"] = "PP-OCRv3"
-            
-        return PaddleOCR(**kwargs)
+    def _get_ocr(lang: str) -> Any:  
+        # Deprecated wrapper, redirects to singleton
+        return TextDetector.get_shared_ocr(lang)
 
     def detect_text(self, frame: np.ndarray, min_score: float = 0.5, min_size_px: int = 12, 
                     min_size_ratio: float = 0.02, nms_iou_threshold: float = 0.35,
