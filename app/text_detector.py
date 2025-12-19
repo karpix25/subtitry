@@ -27,7 +27,7 @@ class TextDetector:
             "det_db_unclip_ratio": 1.6,
             "det_db_thresh": 0.1,  # Lower threshold to detect faint/blurry text
             "use_angle_cls": False,
-            "det_limit_side_len": 1536, # Reduced from 2500 to 1536 to speed up CPU processing (15m -> 5m)
+            "det_limit_side_len": 2560, # Increased to 2560 for Maximum Accuracy (Slow but precise)
             "show_log": False
         }
         
