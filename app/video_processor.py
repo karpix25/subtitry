@@ -22,7 +22,7 @@ class VideoProcessingOptions:
     inpaint_radius: int = 4
     subtitle_intensity_threshold: Optional[float] = None
     keyframe_interval: float = 0.0  # Process every frame for instant response
-    bbox_padding: float = 0.60
+    bbox_padding: float = 0.90 # Increased from 0.60 to 0.90 (1.5x boost) for Maximum Coverage
     language_hint: str = "auto"
     subtitle_region_height: float = 0.8  # Increased to 80% to catch flying text starting high
     subtitle_region_vertical: str = "bottom"
