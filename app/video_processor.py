@@ -32,6 +32,10 @@ class VideoProcessingOptions:
     subtitle_region_vertical: str = "bottom"
     min_score: float = 0.15  # Extremely low threshold (0.15) to catch text immediately on appearance
     force_region_mask: bool = False
+    
+    # Smart Zone (Auto-ROI)
+    roi_y_min: Optional[int] = None
+    roi_y_max: Optional[int] = None
 
 
 class TextTracker:
@@ -169,52 +173,95 @@ class VideoProcessor:
         )
         return detections
 
-    def analyze_subtitle_region(self, input_path: Path) -> Dict[str, Any]:
-        """Scan video beginning to determine if subtitles are at Top or Bottom."""
+    def scan_subtitle_layout(self, input_path: Path) -> Tuple[Optional[int], Optional[int]]:
+        """Smart Zone: Scan video to find precise Y-bounds of subtitles."""
         cap = cv2.VideoCapture(str(input_path))
         if not cap.isOpened():
-            return {"vertical": "bottom", "height": 0.45}
+            return None, None
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
         
-        max_time = 20.0
-        interval = 1.0
-        frame_indices = [int(i * fps * interval) for i in range(int(max_time / interval))]
+        # Scan 20 frames evenly distributed
+        num_samples = 20
+        interval = max(1.0, duration / num_samples)
+        frame_indices = [int(i * fps * interval) for i in range(num_samples)]
         
-        detector = TextDetector(languages=("en", "ru"), language_hint="auto")
-        top_score = 0
-        bottom_score = 0
-        top_h = height * 0.35
-        bot_h = height * 0.65
+        # Detector with HIGH threshold to find only clear, static-ish text for layout analysis
+        detector = TextDetector.get_shared_ocr("ru") # Use singleton
+        
+        y_coords = []
         center_x = width / 2
         
         for idx in frame_indices:
             cap.set(cv2.CAP_PROP_POS_FRAMES, idx)
             ret, frame = cap.read()
-            if not ret:
-                break
+            if not ret: break
             
-            # Updated call
-            detections = self._detect_frame_text(frame, detector, subtitle_region_height=1.0, min_score=0.5)
-            
-            for det in detections:
-                x1, y1, x2, y2 = det["bbox"]
-                cy = (y1 + y2) / 2
-                cx = (x1 + x2) / 2
-                if abs(cx - center_x) > (width * 0.2):
+            # Use raw paddle call for speed, skip our complex wrapper
+            try:
+                dt_boxes, _, _ = detector.__call__(frame, cls=False)
+            except:
+                continue
+                
+            if dt_boxes is None: continue
+
+            for box in dt_boxes:
+                box = np.array(box).astype(np.int32)
+                y_min, y_max = np.min(box[:, 1]), np.max(box[:, 1])
+                x_min, x_max = np.min(box[:, 0]), np.max(box[:, 0])
+                
+                # Filter: Must be central-ish (subtitles usually centered)
+                box_cx = (x_min + x_max) / 2
+                if abs(box_cx - center_x) > (width * 0.35): # Allow 70% width spread
                     continue
-                if cy < top_h:
-                    top_score += 1
-                elif cy > bot_h:
-                    bottom_score += 1
                     
+                # Filter: Must be small enough to be text (not full screen graphics)
+                if (y_max - y_min) > (height * 0.3):
+                    continue
+
+                y_coords.append((y_min, y_max))
+
         cap.release()
         
-        if top_score > bottom_score and top_score > 3:
-             return {"vertical": "top", "height": 0.35}
-        return {"vertical": "bottom", "height": 0.45}
+        if not y_coords:
+            return None, None # Fallback to default
+            
+        # Cluster Analysis: Find the "Dominant Band"
+        # We look for a band that contains the most detections
+        y_min_list = [y[0] for y in y_coords]
+        y_max_list = [y[1] for y in y_coords]
+        
+        # Robust min/max using percentiles to ignore outliers
+        if len(y_min_list) < 3:
+            return None, None
+
+        # Sort
+        y_min_list.sort()
+        y_max_list.sort()
+        
+        # Take 10th percentile as Top and 90th as Bottom (Aggressive trimming of outliers)
+        idx_10 = int(len(y_min_list) * 0.10)
+        idx_90 = int(len(y_max_list) * 0.90)
+        
+        smart_y_min = y_min_list[idx_10]
+        smart_y_max = y_max_list[idx_90]
+        
+        # Add safety padding (10% of band height)
+        band_h = smart_y_max - smart_y_min
+        pad = max(20, band_h * 0.2)
+        
+        smart_y_min = max(0, int(smart_y_min - pad))
+        smart_y_max = min(height, int(smart_y_max + pad))
+        
+        # Sanity check: If band is too usually high (top of screen), accept it.
+        # If band is practically the whole screen, reject it (return None).
+        if (smart_y_max - smart_y_min) > (height * 0.8):
+             return None, None
+             
+        return smart_y_min, smart_y_max
 
     def process_video(
         self, input_path: Path, output_path: Path, options: VideoProcessingOptions, debug: bool = False, limit_frames: int = 0, dual_mode: bool = False
