@@ -248,6 +248,53 @@ class VideoProcessor:
         last_boxes = []
 
         try:
+        # Lookahead Buffer for Negative Latency
+        # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
+        frame_buffer = [] 
+        BUFFER_SIZE = 6
+
+        def process_buffered_frame(b_info):
+             b_idx, b_frame, b_boxes = b_info
+             
+             fill_color = None
+             if (dual_mode or not debug) and b_boxes:
+                  fill_color = self._get_dominant_color(b_frame, subtitle_region_height=0.45) # Use solid fill logic here too? Or blurring?
+                  # The original code used solid fill. Let's keep consistency.
+             
+             # Main Output
+             if dual_mode:
+                frame_clean = b_frame.copy()
+                if b_boxes and fill_color:
+                    for bbox in b_boxes:
+                        x1, y1, x2, y2 = map(int, bbox)
+                        cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
+                writers['main'].write(frame_clean)
+             else:
+                if debug:
+                    frame_viz = b_frame.copy()
+                    if b_boxes:
+                        for bbox in b_boxes:
+                            x1, y1, x2, y2 = map(int, bbox)
+                            cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    writers['main'].write(frame_viz)
+                else:
+                    frame_clean = b_frame.copy()
+                    if b_boxes and fill_color:
+                        for bbox in b_boxes:
+                            x1, y1, x2, y2 = map(int, bbox)
+                            cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
+                    writers['main'].write(frame_clean)
+            
+             # Debug Output (Dual)
+             if dual_mode and 'debug' in writers:
+                frame_viz = b_frame.copy()
+                if b_boxes:
+                    for bbox in b_boxes:
+                        x1, y1, x2, y2 = map(int, bbox)
+                        cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                writers['debug'].write(frame_viz)
+
+        try:
             while cap.isOpened():
                 if limit_frames > 0 and frame_idx >= limit_frames:
                     break
@@ -260,85 +307,58 @@ class VideoProcessor:
                 
                 if is_keyframe:
                     detections = self._detect_frame_text(
-                        frame, 
-                        detector, 
-                        subtitle_region_height=0.45,
-                        min_score=options.min_score if hasattr(options, 'min_score') else 0.5 
+                        frame, detector, 
+                        subtitle_region_height=options.subtitle_region_height,
+                        min_score=options.min_score
                     )
-                    
-                    # Apply expansion/padding to valid detections
                     if options.bbox_padding > 0:
-                        detections = [
-                            self._expand_detection(det, options.bbox_padding, width, height) 
-                            for det in detections
-                        ]
-
+                        detections = [self._expand_detection(det, options.bbox_padding, width, height) for det in detections]
                     tracker.update(detections, frame_idx, 
                                    subtitle_intensity_threshold=options.subtitle_intensity_threshold,
-                                   subtitle_region_height=0.45,
+                                   subtitle_region_height=options.subtitle_region_height,
                                    frame_width=width)
                     keyframes_analyzed += 1
-                if not is_keyframe and frame_idx > 0:
+                elif frame_idx > 0:
                      tracker.predict_only(frame_idx)
 
-                # Get active tracks with ZERO latency
-                # We trust the classifier/NMS enough to allow instant activation.
+                # Get boxes
                 min_life = 0.0 
-                
                 active_tracks = tracker.get_active_tracks(frame_idx, min_lifetime=min_life)
+                current_boxes = [t.boxes[-1] for t in active_tracks if t.classification == "subtitle" and t.boxes]
                 
-                current_boxes = []
-                for track in active_tracks:
-                    if track.classification == "subtitle" and track.boxes:
-                        current_boxes.append(track.boxes[-1])
-                
+                # Use last_boxes logic for continuity if skipping frames
                 if current_boxes:
                     last_boxes = current_boxes
                 elif is_keyframe:
                      if not active_tracks:
                         last_boxes = []
                 
-                current_boxes_to_draw = current_boxes if current_boxes else last_boxes
-
-                fill_color = None
-                if (dual_mode or not debug) and current_boxes_to_draw:
-                     fill_color = self._get_dominant_color(frame, subtitle_region_height=0.45)
+                boxes_to_store = current_boxes if current_boxes else last_boxes
                 
-                if dual_mode:
-                    frame_clean = frame.copy()
-                    if current_boxes_to_draw and fill_color:
-                        for bbox in current_boxes_to_draw:
-                            x1, y1, x2, y2 = map(int, bbox)
-                            cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
-                        subtitle_frames += 1 
-                    writers['main'].write(frame_clean)
-                else:
-                    if debug:
-                        frame_viz = frame.copy()
-                        if current_boxes_to_draw:
-                            for bbox in current_boxes_to_draw:
-                                x1, y1, x2, y2 = map(int, bbox)
-                                cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                                subtitle_frames += 1
-                        writers['main'].write(frame_viz)
-                    else:
-                        frame_clean = frame.copy()
-                        if current_boxes_to_draw and fill_color:
-                            for bbox in current_boxes_to_draw:
-                                x1, y1, x2, y2 = map(int, bbox)
-                                cv2.rectangle(frame_clean, (x1, y1), (x2, y2), fill_color, -1)
-                            subtitle_frames += 1
-                        writers['main'].write(frame_clean)
+                # Add to buffer
+                frame_buffer.append([frame_idx, frame, boxes_to_store])
                 
-                if dual_mode and 'debug' in writers:
-                    frame_viz = frame.copy()
-                    if current_boxes_to_draw:
-                        for bbox in current_boxes_to_draw:
-                            x1, y1, x2, y2 = map(int, bbox)
-                            cv2.rectangle(frame_viz, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                    writers['debug'].write(frame_viz)
+                # Back-fill Logic
+                if boxes_to_store:
+                    for i in range(len(frame_buffer) - 2, -1, -1):
+                        if not frame_buffer[i][2]: 
+                            frame_buffer[i][2] = boxes_to_store # Retroactive fill
+                        else:
+                            break 
+                
+                # Write if buffer full
+                if len(frame_buffer) >= BUFFER_SIZE:
+                    popped = frame_buffer.pop(0)
+                    process_buffered_frame(popped)
+                    if popped[2]: subtitle_frames += 1
 
                 frame_idx += 1
+            
+            # Flush Buffer
+            while frame_buffer:
+                popped = frame_buffer.pop(0)
+                process_buffered_frame(popped)
+                if popped[2]: subtitle_frames += 1
                 
         finally:
             cap.release()
