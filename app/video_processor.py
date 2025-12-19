@@ -408,7 +408,9 @@ class VideoProcessor:
                 "x": int(total_cx / pos_count) if pos_count > 0 else None,
                 "y": int(total_cy / pos_count) if pos_count > 0 else None
             }
-        }        if dual_mode and 'debug' in output_paths:
+        }
+        
+        if dual_mode and 'debug' in output_paths:
             tm_debug, out_debug = output_paths['debug']
             if tm_debug.exists():
                 tm_debug.rename(out_debug) 
