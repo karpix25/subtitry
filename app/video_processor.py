@@ -247,7 +247,6 @@ class VideoProcessor:
         keyframes_analyzed = 0
         last_boxes = []
 
-        try:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
