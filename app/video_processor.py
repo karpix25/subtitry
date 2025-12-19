@@ -351,15 +351,7 @@ class VideoProcessor:
                         all_cx.append(cx)
                         all_cy.append(cy)
                 
-                # Accumulate Position Stats
-                if boxes_to_store:
-                    for box in boxes_to_store:
-                        x1, y1, x2, y2 = box
-                        cx = (x1 + x2) / 2
-                        cy = (y1 + y2) / 2
-                        total_cx += cx
-                        total_cy += cy
-                        pos_count += 1
+
                 
                 # Add to buffer
                 frame_buffer.append([frame_idx, frame, boxes_to_store])
