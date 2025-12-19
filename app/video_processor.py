@@ -254,7 +254,7 @@ class VideoProcessor:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
-        BUFFER_SIZE = 5 # Reduced from 6 to 5 to save memory (prevent SIGTERM)
+        BUFFER_SIZE = 3 # Further reduced to 3 for Maximum Stability (Emergency Fix)
         
         # Position Stats (Median lists)
         all_cx = []
