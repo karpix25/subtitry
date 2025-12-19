@@ -334,6 +334,16 @@ class VideoProcessor:
                 
                 boxes_to_store = current_boxes if current_boxes else last_boxes
                 
+                # Accumulate Position Stats
+                if boxes_to_store:
+                    for box in boxes_to_store:
+                        x1, y1, x2, y2 = box
+                        cx = (x1 + x2) / 2
+                        cy = (y1 + y2) / 2
+                        total_cx += cx
+                        total_cy += cy
+                        pos_count += 1
+                
                 # Add to buffer
                 frame_buffer.append([frame_idx, frame, boxes_to_store])
                 
@@ -378,8 +388,34 @@ class VideoProcessor:
             "subtitle_frames": subtitle_frames,
             "fps": fps,
             "duration": metadata.get("duration") or (frame_idx / fps),
-            "keyframes_analyzed": keyframes_analyzed,
-        }
+        # Stats accumulation
+        total_cx = 0.0
+        total_cy = 0.0
+        pos_count = 0
+
+        try:
+            while cap.isOpened():
+                # ... (existing loop code, omitting lines 299-354 for brevity in this logical block, 
+                # strictly strictly speaking I am replacing the surrounding block, but I need to inject
+                # the accumulation logic INSIDE the loop. 
+                # This ReplaceFileContent needs to target specific lines.
+                # Actually, I can just accumulate in the main loop where boxes are identified.)
+                pass # Placeholder for thought process.
+        
+        # ACTUALLY, I will use replace_file_content to inject initialization BEFORE the loop
+        # and accumulation INSIDE the loop.
+        
+        # But wait, looking at lines 335 in previous view:
+        # boxes_to_store = current_boxes if current_boxes else last_boxes
+        
+        # I can replace just that block to add accumulation.
+        # And replace the return block to add the result.
+        
+        # Let's do 2 chunks.
+        pass
+
+# RESTARTING TOOL CALL WITH CORRECT CHUNKS
+
 
         if dual_mode and 'debug' in output_paths:
             tm_debug, out_debug = output_paths['debug']
