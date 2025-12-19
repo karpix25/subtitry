@@ -24,7 +24,7 @@ class TextDetector:
         
         kwargs = {
             "lang": lang,
-            "det_db_unclip_ratio": 1.6,
+            "det_db_unclip_ratio": 3.0, # Increased from 1.6 to 3.0 to aggressively inflate text and fix fragmented words
             "det_db_thresh": 0.1,  # Lower threshold to detect faint/blurry text
             "use_angle_cls": False,
             "det_limit_side_len": 1280, # Balanced for Speed (Real-Time goal) + Accuracy
@@ -99,10 +99,85 @@ class TextDetector:
         # Cluster broken words into lines
         detections = self._cluster_lines(detections)
         
+        # New: Cluster vertically stacked lines (Paragraphs)
+        detections = self._cluster_stacks(detections)
+        
         # Apply NMS to remove duplicates
         detections = self._apply_nms(detections, nms_iou_threshold)
         
         return detections
+
+    def _cluster_stacks(self, detections: List[Dict[str, Any]], x_tolerance: float = 0.8, y_gap_tolerance: float = 2.0) -> List[Dict[str, Any]]:
+        """Cluster vertically adjacent lines into paragraph blocks.
+        
+        Args:
+            detections: List of merged line detections
+            x_tolerance: Horizontal overlap required (0.0-1.0 overlap coefficient) - lowered to be permissive
+            y_gap_tolerance: Max vertical gap as multiple of line height
+            
+        Returns:
+            List of paragraph blocks
+        """
+        if not detections:
+            return []
+            
+        # Sort by y1
+        sorted_dets = sorted(detections, key=lambda d: d["bbox"][1])
+        merged = []
+        
+        while sorted_dets:
+            current = sorted_dets.pop(0)
+            x1, y1, x2, y2 = current["bbox"]
+            current_height = y2 - y1
+            
+            # Try to merge with looking-ahead candidates
+            i = 0
+            while i < len(sorted_dets):
+                candidate = sorted_dets[i]
+                cx1, cy1, cx2, cy2 = candidate["bbox"]
+                candidate_height = cy2 - cy1
+                
+                # Check 1: Vertical proximity (candidate top close to current bottom)
+                # Gap between current bottom (y2) and candidate top (cy1)
+                gap_y = dir_gap = cy1 - y2
+                
+                # Allow slight negative gap (overlap) or positive gap within tolerance
+                avg_h = (current_height + candidate_height) / 2
+                allowed_gap = avg_h * y_gap_tolerance
+                
+                if gap_y < allowed_gap:
+                    # Check 2: Horizontal Overlap
+                    # Do they share X-space?
+                    # Overlap X
+                    ox = max(0, min(x2, cx2) - max(x1, cx1))
+                    # Union X width
+                    ux = max(x2, cx2) - min(x1, cx1)
+                    
+                    # If they overlap significantly relative to the smaller width
+                    min_w = min(x2-x1, cx2-cx1)
+                    
+                    if ox > 0: # Simple overlap check is usually enough for subtitles
+                         # Merge!
+                        nx1 = min(x1, cx1)
+                        ny1 = min(y1, cy1)
+                        nx2 = max(x2, cx2)
+                        ny2 = max(y2, cy2)
+                        
+                        # Update current
+                        x1, y1, x2, y2 = nx1, ny1, nx2, ny2
+                        current["bbox"] = [x1, y1, x2, y2]
+                        current["text"] += "\n" + candidate["text"]
+                        current["score"] = max(current["score"], candidate["score"])
+                        
+                        # Remove candidate
+                        sorted_dets.pop(i)
+                        continue # Stay at i=0 to check next candidates against new merged block
+                
+                i += 1
+            
+            merged.append(current)
+            
+        return merged
 
     def _cluster_lines(self, detections: List[Dict[str, Any]], y_tolerance: float = 0.5) -> List[Dict[str, Any]]:
         """Cluster horizontally adjacent text boxes into lines.
