@@ -30,7 +30,7 @@ class VideoProcessingOptions:
     language_hint: str = "auto"
     subtitle_region_height: float = 0.45  # Reduced from 0.80 to 0.45 to exclude UI/Top text
     subtitle_region_vertical: str = "bottom"
-    min_score: float = 0.40  # Balanced: 0.25 (noisy) < 0.40 < 0.50 (strict)
+    min_score: float = 0.30  # Lowered from 0.40 to 0.30 to catch fading 2nd lines earlier
     force_region_mask: bool = False
 
 
@@ -253,7 +253,7 @@ class VideoProcessor:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
-        BUFFER_SIZE = 3 # Further reduced to 3 for Maximum Stability (Emergency Fix)
+        BUFFER_SIZE = 8 # Increased to 8 (0.3s) to fix "lag" on fade-ins. (Singleton OCR saves RAM now)
         
         # Position Stats (Median lists)
         all_cx = []
