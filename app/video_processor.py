@@ -184,8 +184,8 @@ class VideoProcessor:
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
         
-        # Scan 20 frames evenly distributed
-        num_samples = 20
+        # Scan 50 frames (approx 1 per sec for short vids, or more dense for long)
+        num_samples = 50
         interval = max(1.0, duration / num_samples)
         frame_indices = [int(i * fps * interval) for i in range(num_samples)]
         
@@ -221,11 +221,11 @@ class VideoProcessor:
 
                 # Filter: Must be central-ish
                 box_cx = (x_min + x_max) / 2
-                if abs(box_cx - center_x) > (width * 0.35): 
+                if abs(box_cx - center_x) > (width * 0.45): # Relaxed width check
                     continue
                     
                 # Filter: Must be small enough (not full screen)
-                if h > (height * 0.3):
+                if h > (height * 0.4): # Relaxed height check
                     continue
 
                 y_coords.append((y_min, y_max))
@@ -341,7 +341,7 @@ class VideoProcessor:
         # Lookahead Buffer for Negative Latency
         # We store frames in memory to allow future detections to retroactively mask past frames (Time Machine)
         frame_buffer = [] 
-        BUFFER_SIZE = 12 # Extreme Buffer (0.5s) to guarantee zero latency even for slow fades
+        BUFFER_SIZE = 25 # Increased to 1s (25 frames) to handle slow fade-ins and guarantee early masking
         
         # Position Stats (Median lists)
         all_cx = []
