@@ -50,10 +50,10 @@ class TextDetector:
                     "det_db_thresh": 0.1,
                     "use_angle_cls": False,
                     "det_limit_side_len": 1280,
-                    "show_log": False,
-                    "rec_model_dir": "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer",
+                    # "show_log": False, # Removed as it causes error in newer versions
+                    # "rec_model_dir": "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer", # Removed hardcoded path
                     "ocr_version": "PP-OCRv3",
-                    "rec_algorithm": "CRNN"
+                    # "rec_algorithm": "CRNN" # Removed as it causes error
                 } 
                 cls._SHARED_INSTANCE = PaddleOCR(**kwargs)
             

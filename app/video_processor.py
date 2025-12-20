@@ -173,8 +173,8 @@ class VideoProcessor:
         )
         return detections
 
-    def scan_subtitle_layout(self, input_path: Path) -> Tuple[Optional[int], Optional[int]]:
-        """Smart Zone: Scan video to find precise Y-bounds of subtitles."""
+    def scan_subtitle_layout(self, input_path: Path) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
+        """Smart Zone + Smart Size: Scan video to find precise Y-bounds and Max Width/Height of subtitles."""
         cap = cv2.VideoCapture(str(input_path))
         if not cap.isOpened():
             return None, None
@@ -189,10 +189,12 @@ class VideoProcessor:
         interval = max(1.0, duration / num_samples)
         frame_indices = [int(i * fps * interval) for i in range(num_samples)]
         
-        # Detector with HIGH threshold to find only clear, static-ish text for layout analysis
-        detector = TextDetector.get_shared_ocr("ru") # Use singleton
+        # Detector with slightly lower threshold to catch more potential subtitle shapes
+        detector = TextDetector.get_shared_ocr("ru") 
         
         y_coords = []
+        box_widths = []
+        box_heights = []
         center_x = width / 2
         
         for idx in frame_indices:
@@ -200,7 +202,6 @@ class VideoProcessor:
             ret, frame = cap.read()
             if not ret: break
             
-            # Use raw paddle call for speed, skip our complex wrapper
             try:
                 dt_boxes, _, _ = detector.__call__(frame, cls=False)
             except:
@@ -213,59 +214,94 @@ class VideoProcessor:
                 y_min, y_max = np.min(box[:, 1]), np.max(box[:, 1])
                 x_min, x_max = np.min(box[:, 0]), np.max(box[:, 0])
                 
-                # Filter: Must be central-ish (subtitles usually centered)
+                w = x_max - x_min
+                h = y_max - y_min
+
+                # Filter: Must be central-ish
                 box_cx = (x_min + x_max) / 2
-                if abs(box_cx - center_x) > (width * 0.35): # Allow 70% width spread
+                if abs(box_cx - center_x) > (width * 0.35): 
                     continue
                     
-                # Filter: Must be small enough to be text (not full screen graphics)
-                if (y_max - y_min) > (height * 0.3):
+                # Filter: Must be small enough (not full screen)
+                if h > (height * 0.3):
                     continue
 
                 y_coords.append((y_min, y_max))
+                box_widths.append(w)
+                box_heights.append(h)
 
         cap.release()
         
         if not y_coords:
-            return None, None # Fallback to default
+            return None, None 
             
-        # Cluster Analysis: Find the "Dominant Band"
-        # We look for a band that contains the most detections
+        # 1. Y-Band Analysis (Smart Zone)
         y_min_list = [y[0] for y in y_coords]
         y_max_list = [y[1] for y in y_coords]
         
-        # Robust min/max using percentiles to ignore outliers
         if len(y_min_list) < 3:
             return None, None
 
-        # Sort
         y_min_list.sort()
         y_max_list.sort()
         
-        # Take 10th percentile as Top and 90th as Bottom (Aggressive trimming of outliers)
+        # 10th/90th percentile for Band
         idx_10 = int(len(y_min_list) * 0.10)
         idx_90 = int(len(y_max_list) * 0.90)
         
         smart_y_min = y_min_list[idx_10]
         smart_y_max = y_max_list[idx_90]
         
-        # Add safety padding (10% of band height)
+        # Pad band
         band_h = smart_y_max - smart_y_min
         pad = max(20, band_h * 0.2)
+        final_y_min = max(0, int(smart_y_min - pad))
+        final_y_max = min(height, int(smart_y_max + pad))
         
-        smart_y_min = max(0, int(smart_y_min - pad))
-        smart_y_max = min(height, int(smart_y_max + pad))
-        
-        # Sanity check: If band is too usually high (top of screen), accept it.
-        # If band is practically the whole screen, reject it (return None).
-        if (smart_y_max - smart_y_min) > (height * 0.8):
+        if (final_y_max - final_y_min) > (height * 0.8):
              return None, None
-             
-        return smart_y_min, smart_y_max
+
+        # 2. Max Dimensions Analysis (Smart Size)
+        # We want the max width/height seen (robust max) 
+        # to apply a "Stamp" that covers the largest subtitle case (two lines).
+        box_widths.sort()
+        box_heights.sort()
+        
+        # Take 95th percentile to avoid crazy outliers, but be aggressive enough to cover longest sentences
+        max_w = box_widths[int(len(box_widths) * 0.95)]
+        max_h = box_heights[int(len(box_heights) * 0.95)]
+        
+        # Force min dimensions based on band height
+        # If we detected a band of height 100, but max_h is only 40 (single lines mostly detected), 
+        # we might want to trust the band height more if it implies 2 lines?
+        # Better: Just use max_h but add padding logic later.
+        
+        return (final_y_min, final_y_max), (max_w, max_h)
 
     def process_video(
         self, input_path: Path, output_path: Path, options: VideoProcessingOptions, debug: bool = False, limit_frames: int = 0, dual_mode: bool = False
     ) -> Dict[str, Any]:
+        # Step 0: Smart Scan (Layout Analysis)
+        # We pre-calculate the "Max Plate" (largest subtitle box) to enforce a consistent mask size.
+        # This solves the "dynamic 2-row" issue by applying the 2-row mask immediately from frame 1.
+        scan_y_bounds, scan_max_rect = self.scan_subtitle_layout(input_path)
+        
+        global_mask_w = None
+        global_mask_h = None
+        
+        if scan_y_bounds:
+            # Apply Smart Zone
+            options.roi_y_min, options.roi_y_max = scan_y_bounds
+            # Also update subtitle_region_height to help classifier match the detailed scan
+            # (Approximation based on ROI relative to height)
+            # Actually, let's keep it simple: ROI is used for skipping OCR, classifier uses relative band.
+            # We can trust Scan Result more than classifier defaults.
+            pass
+            
+        if scan_max_rect:
+            global_mask_w, global_mask_h = scan_max_rect
+            print(f"[INFO] Smart Scan: Max Subtitle Size = {global_mask_w}x{global_mask_h}")
+
         cap = cv2.VideoCapture(str(input_path))
         fps = cap.get(cv2.CAP_PROP_FPS)
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -364,8 +400,12 @@ class VideoProcessor:
                         subtitle_region_height=options.subtitle_region_height,
                         min_score=options.min_score
                     )
+                    
+                    # Apply Dynamic Max Mask logic at detection time? 
+                    # No, apply it when resolving boxes.
                     if options.bbox_padding > 0:
                         detections = [self._expand_detection(det, options.bbox_padding, width, height) for det in detections]
+                        
                     tracker.update(detections, frame_idx, 
                                    subtitle_intensity_threshold=options.subtitle_intensity_threshold,
                                    subtitle_region_height=options.subtitle_region_height,
@@ -387,6 +427,69 @@ class VideoProcessor:
                         last_boxes = []
                 
                 boxes_to_store = current_boxes if current_boxes else last_boxes
+
+                # FORCE MAX MASK SIZE
+                # If we have any active subtitles, ignore their individual boxes 
+                # and apply the GLOBAL MAX MASK derived from scan (if available).
+                if boxes_to_store and global_mask_w and global_mask_h:
+                    # Logic: Find the center of the current detections (or screen center?)
+                    # Subtitles are 99% centered. Safe bet: Use screen center X.
+                    # For Y user wants consistency. Use the scan Y bounds?
+                    # Mixing approaches:
+                    # 1. Use X centered on screen.
+                    # 2. Use Y from the current detection (to track moving subs) OR fixed Y from scan?
+                    #    - Dynamic subs often stay at fixed Y. 
+                    #    - Risk: If sub moves up, we mask below it.
+                    #    - Hybird: Center the MAX BOX on the current detection's center Y.
+                    
+                    final_boxes = []
+                    center_x = width // 2
+                    
+                    for box in boxes_to_store:
+                        x1, y1, x2, y2 = box
+                        # box_cy = (y1 + y2) // 2
+                        
+                        # Case A: Use Scan Y Bounds (Static Position)
+                        # If the scan was confident, use its Y bounds directly.
+                        if scan_y_bounds:
+                             # Rigid lock to scan area
+                             final_boxes.append([
+                                 center_x - global_mask_w // 2,
+                                 scan_y_bounds[0], # Fixed Min Y
+                                 center_x + global_mask_w // 2,
+                                 scan_y_bounds[1]  # Fixed Max Y
+                             ])
+                        else:
+                             # Case B: Float with detection (Dynamic Y)
+                             # Center the max height on the current detection
+                             # Actually, safer to just use union of current box and max dimensions?
+                             # User asked: "take max size ... and apply it by default".
+                             # Let's align Bottoms? Subtitles grow up usually.
+                             # Or align centers.
+                             
+                             # Let's simple: Center horizontally, use current Y but force min height = global max height
+                             # If current height < global height, grow upwards (since lines added on top usually? or bottom?)
+                             # Actually lines usually added: Line 1 (bottom), then Line 2 appears above it? Or below?
+                             # Standard .srt: Bottom stays fixed, grows up. 
+                             # YouTube autogen: Top stays fixed, grows down?
+                             # Safest: Center Y.
+                             
+                             box_cy = (y1 + y2) / 2
+                             
+                             fx1 = center_x - global_mask_w // 2
+                             fx2 = center_x + global_mask_w // 2
+                             fy1 = box_cy - global_mask_h // 2
+                             fy2 = box_cy + global_mask_h // 2
+                             
+                             final_boxes.append([fx1, fy1, fx2, fy2])
+                    
+                    boxes_to_store = final_boxes
+                    
+                    # Deduplicate overlapping boxes since we forced them to same/similar coords
+                    # (Simple approach: just take one if they are close)
+                    if len(boxes_to_store) > 1:
+                        # Just take the first one (they are likely identical now)
+                        boxes_to_store = [boxes_to_store[0]]
 
                 # Accumulate Position Stats
                 if boxes_to_store:
@@ -452,6 +555,11 @@ class VideoProcessor:
             "subtitle_position": {
                 "x": int(statistics.median(all_cx)) if all_cx else None,
                 "y": int(statistics.median(all_cy)) if all_cy else None
+            },
+            "detected_region": {
+                "scan_valid": bool(scan_y_bounds),
+                "max_w": int(global_mask_w) if global_mask_w else None,
+                "max_h": int(global_mask_h) if global_mask_h else None
             }
         }
         
