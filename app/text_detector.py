@@ -72,6 +72,12 @@ class TextDetector:
         # Deprecated wrapper, redirects to singleton
         return TextDetector.get_shared_ocr(lang)
 
+    def detect_raw_safe(self, frame: np.ndarray) -> Any:
+        """Thread-safe wrapper for raw PaddleOCR call."""
+        ocr = self._get_ocr(self.language_hint)
+        with _OCR_LOCK:
+            return ocr.ocr(frame, cls=False)
+
     def detect_text(self, frame: np.ndarray, min_score: float = 0.5, min_size_px: int = 12, 
                     min_size_ratio: float = 0.02, nms_iou_threshold: float = 0.35,
                     subtitle_region_height: float = 1.0, subtitle_region_vertical: str = "bottom") -> List[Dict[str, Any]]:

@@ -202,8 +202,10 @@ class VideoProcessor:
             ret, frame = cap.read()
             if not ret: break
             
+            # Use raw paddle call for speed, skip our complex wrapper
             try:
-                dt_boxes, _, _ = detector.__call__(frame, cls=False)
+                # SAFE CALL: Use thread-locked wrapper
+                dt_boxes, _, _ = detector.detect_raw_safe(frame)
             except:
                 continue
                 
