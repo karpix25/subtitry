@@ -98,9 +98,9 @@ class SubtitleClassifier:
                  mid_x = 0
              
              center_diff = abs(mid_x - (frame_width / 2))
-             # Threshold: Allow 20% deviation from center (e.g. 200px on 1000px width)
-             # Subtitles are usually perfectly centered, 20% is generous.
-             if center_diff > (frame_width * 0.25):
+             # Threshold: Allow 10% deviation from center (STRICT).
+             # Was 25%, but that allowed side UIs. Subtitles are usually <5% off.
+             if center_diff > (frame_width * 0.10):
                   problems.append(f"off_center({center_diff:.0f})")
 
         if not problems:

@@ -221,11 +221,15 @@ class VideoProcessor:
 
                 # Filter: Must be central-ish
                 box_cx = (x_min + x_max) / 2
-                if abs(box_cx - center_x) > (width * 0.45): # Relaxed width check
+                # STRICT CENTERING: Subtitles are almost perfect center. 
+                # Allow only 10% deviation (e.g. 192px on 1920px width). 
+                # Side menus/UI are usually > 25% off-center.
+                if abs(box_cx - center_x) > (width * 0.10): 
                     continue
                     
-                # Filter: Must be small enough (not full screen)
-                if h > (height * 0.4): # Relaxed height check
+                # Filter: Must be small enough (not tall menus)
+                # Subtitles (2 lines) are usually ~10-12% of height max.
+                if h > (height * 0.15):
                     continue
 
                 # Filter: Strict UI Rejection (Ignore top 70% of screen)
