@@ -30,7 +30,7 @@ class VideoProcessingOptions:
     language_hint: str = "auto"
     subtitle_region_height: float = 0.45  # Reverted to 0.45 (User: "Zone was fine")
     subtitle_region_vertical: str = "bottom"
-    min_score: float = 0.15  # Extremely low threshold (0.15) to catch text immediately on appearance
+    min_score: float = 0.05  # Ultra-low threshold (0.05) to catch text immediately on appearance (anti-lag)
     force_region_mask: bool = False
     
     # Smart Zone (Auto-ROI)
