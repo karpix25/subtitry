@@ -60,7 +60,7 @@ class TextDetector:
                     # often caused by OpenMP/multiprocessing race conditions in fork-unsafe environments.
                     # "use_mp": False, # Removed as it causes error
                     # "total_process_num": 1, # Removed as it causes error
-                    # "enable_mkldnn": False # Optional: if MKL causes issues
+                    "enable_mkldnn": False # Fixed: MKL causes segfaults in some envs
                 } 
                 cls._SHARED_INSTANCE = PaddleOCR(**kwargs)
             
