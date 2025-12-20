@@ -20,6 +20,12 @@ from loguru import logger
 from .task_manager import TaskManager
 from .video_processor import VideoProcessingOptions, VideoProcessor
 
+# STABILITY FIX: Enforce single-treaded execution for Paddle/OpenMP to prevent malloc crashes
+os.environ["OMP_NUM_THREADS"] = "1"
+os.environ["MKL_NUM_THREADS"] = "1"
+os.environ["FLAGS_n_eager_helper_threads"] = "1"
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Start background cleanup task

@@ -54,6 +54,13 @@ class TextDetector:
                     # "rec_model_dir": "/root/.paddleocr/whl/rec/cyrillic/cyrillic_PP-OCRv3_rec_infer", # Removed hardcoded path
                     "ocr_version": "PP-OCRv3",
                     # "rec_algorithm": "CRNN" # Removed as it causes error
+                    
+                    # STABILITY FIX: Disable multiprocessing and limit threads
+                    # "malloc(): unaligned tcache chunk detected" suggests memory corruption 
+                    # often caused by OpenMP/multiprocessing race conditions in fork-unsafe environments.
+                    # "use_mp": False, # Removed as it causes error
+                    # "total_process_num": 1, # Removed as it causes error
+                    # "enable_mkldnn": False # Optional: if MKL causes issues
                 } 
                 cls._SHARED_INSTANCE = PaddleOCR(**kwargs)
             
