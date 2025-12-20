@@ -228,10 +228,10 @@ class VideoProcessor:
                 if h > (height * 0.4): # Relaxed height check
                     continue
 
-                # Filter: Strict UI Rejection (Ignore top 40% of screen)
-                # User complaint: "paints over interface". Interface is usually top/middle.
-                # Standard subs are bottom 40%.
-                if y_min < (height * 0.4):
+                # Filter: Strict UI Rejection (Ignore top 70% of screen)
+                # User complaint: "paints over interface". User requested search zone 30%.
+                # Standard subs are bottom 30%.
+                if y_min < (height * 0.7):
                     continue
 
                 y_coords.append((y_min, y_max))
