@@ -272,6 +272,9 @@ class VideoProcessor:
         # Take 95th percentile to avoid crazy outliers, but be aggressive enough to cover longest sentences
         max_w = box_widths[int(len(box_widths) * 0.95)]
         max_h = box_heights[int(len(box_heights) * 0.95)]
+
+        # EXPANSION: Increase height by 30% to cover strokes/outlines that OCR misses
+        max_h = int(max_h * 1.3)
         
         # Force min dimensions based on band height
         # If we detected a band of height 100, but max_h is only 40 (single lines mostly detected), 
@@ -430,6 +433,16 @@ class VideoProcessor:
                 
                 boxes_to_store = current_boxes if current_boxes else last_boxes
 
+                # EXPANSION: If smart scan mask is missing, manually expand raw detections by 30%
+                if boxes_to_store and not global_mask_h:
+                     expanded = []
+                     for box in boxes_to_store:
+                         x1, y1, x2, y2 = box
+                         h = y2 - y1
+                         pad = int(h * 0.15) # 15% top + 15% bottom = 30% total
+                         expanded.append([x1, max(0, y1 - pad), x2, min(height, y2 + pad)])
+                     boxes_to_store = expanded
+
                 # FORCE MAX MASK SIZE
                 # If we have any active subtitles, ignore their individual boxes 
                 # and apply the GLOBAL MAX MASK derived from scan (if available).
@@ -463,18 +476,13 @@ class VideoProcessor:
                              ])
                         else:
                              # Case B: Float with detection (Dynamic Y)
-                             # Center the max height on the current detection
-                             # Actually, safer to just use union of current box and max dimensions?
-                             # User asked: "take max size ... and apply it by default".
-                             # Let's align Bottoms? Subtitles grow up usually.
-                             # Or align centers.
-                             
-                             # Let's simple: Center horizontally, use current Y but force min height = global max height
-                             # If current height < global height, grow upwards (since lines added on top usually? or bottom?)
-                             # Actually lines usually added: Line 1 (bottom), then Line 2 appears above it? Or below?
-                             # Standard .srt: Bottom stays fixed, grows up. 
-                             # YouTube autogen: Top stays fixed, grows down?
-                             # Safest: Center Y.
+                             # Apply padding (30%) if not using global mask
+                             # ACTUALLY: The global_mask_h is NOT used here if we are in this block? 
+                             # Wait, the IF condition above says: if scan_y_bounds ... else ...
+                             # AND check meant "if scan_max_rect" existed. 
+                             # If we are here, we have global_mask_w/h, so we use them.
+                             # global_mask_h is already inflated by 30% in scan_layout.
+                             # So no extra padding needed here!
                              
                              box_cy = (y1 + y2) / 2
                              
