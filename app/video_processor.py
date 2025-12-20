@@ -228,6 +228,12 @@ class VideoProcessor:
                 if h > (height * 0.4): # Relaxed height check
                     continue
 
+                # Filter: Strict UI Rejection (Ignore top 40% of screen)
+                # User complaint: "paints over interface". Interface is usually top/middle.
+                # Standard subs are bottom 40%.
+                if y_min < (height * 0.4):
+                    continue
+
                 y_coords.append((y_min, y_max))
                 box_widths.append(w)
                 box_heights.append(h)
@@ -273,8 +279,9 @@ class VideoProcessor:
         max_w = box_widths[int(len(box_widths) * 0.95)]
         max_h = box_heights[int(len(box_heights) * 0.95)]
 
-        # EXPANSION: Increase height by 30% to cover strokes/outlines that OCR misses
-        max_h = int(max_h * 1.3)
+        # EXPANSION: Increase height by 45% to cover thick strokes/outlines even better
+        # (Was 30%, user asked for +15% more)
+        max_h = int(max_h * 1.45)
         
         # Force min dimensions based on band height
         # If we detected a band of height 100, but max_h is only 40 (single lines mostly detected), 
@@ -433,13 +440,13 @@ class VideoProcessor:
                 
                 boxes_to_store = current_boxes if current_boxes else last_boxes
 
-                # EXPANSION: If smart scan mask is missing, manually expand raw detections by 30%
+                # EXPANSION: If smart scan mask is missing, manually expand raw detections by 45% (total)
                 if boxes_to_store and not global_mask_h:
                      expanded = []
                      for box in boxes_to_store:
                          x1, y1, x2, y2 = box
                          h = y2 - y1
-                         pad = int(h * 0.15) # 15% top + 15% bottom = 30% total
+                         pad = int(h * 0.22) # 22% top + 22% bottom = 44% total (approx 45%)
                          expanded.append([x1, max(0, y1 - pad), x2, min(height, y2 + pad)])
                      boxes_to_store = expanded
 
