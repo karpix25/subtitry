@@ -163,45 +163,38 @@ class VideoProcessor:
         self.inpainter = Inpainter()
 
     def _detect_frame_text(
-        self, frame: np.ndarray, detector: TextDetector, subtitle_region_height: float = 0.3, min_score: float = 0.5, subtitle_region_vertical: str = "bottom"
+        self, frame: np.ndarray, detector: TextDetector, subtitle_region_height: float = 0.3, min_score: float = 0.5
     ) -> List[Dict]:
         """Run detection (wrapper)."""
         detections = detector.detect_text(
              frame, 
              min_score=min_score,
-             subtitle_region_height=subtitle_region_height,
-             subtitle_region_vertical=subtitle_region_vertical
+             subtitle_region_height=subtitle_region_height
         )
         return detections
 
-    def scan_subtitle_layout(self, input_path: Path) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]], str]:
+    def scan_subtitle_layout(self, input_path: Path) -> Tuple[Optional[Tuple[int, int]], Optional[Tuple[int, int]]]:
         """Smart Zone + Smart Size: Scan video to find precise Y-bounds and Max Width/Height of subtitles."""
         cap = cv2.VideoCapture(str(input_path))
         if not cap.isOpened():
-            return None, None, "bottom"
+            return None, None
 
         width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+        duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
         
-        # Scan 50 frames
+        # Scan 50 frames (approx 1 per sec for short vids, or more dense for long)
         num_samples = 50
-        interval = (cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps) / num_samples if num_samples > 0 else 1.0
+        interval = max(1.0, duration / num_samples)
         frame_indices = [int(i * fps * interval) for i in range(num_samples)]
         
-        # FIX: Instantiate wrapper, not raw engine
-        detector = TextDetector(language_hint="ru") 
+        # Detector with slightly lower threshold to catch more potential subtitle shapes
+        detector = TextDetector.get_shared_ocr("ru") 
         
         y_coords = []
         box_widths = []
         box_heights = []
-        
-        # Zoning Data
-        top_texts = []
-        bottom_texts = []
-        
-        all_detections = [] # Store (y_min, y_max, w, h, zone_entry)
-
         center_x = width / 2
         
         for idx in frame_indices:
@@ -209,95 +202,62 @@ class VideoProcessor:
             ret, frame = cap.read()
             if not ret: break
             
-            # Use raw paddle call via wrapper
+            # Use raw paddle call for speed, skip our complex wrapper
             try:
-                # Returns [[ [box], (text, score) ], ...]
-                dt_result = detector.detect_raw_safe(frame)
-                if not dt_result or dt_result[0] is None:
-                    continue
-                dt_boxes = dt_result[0] # List of detections
-            except Exception as e:
+                # SAFE CALL: Use thread-locked wrapper
+                dt_boxes, _, _ = detector.detect_raw_safe(frame)
+            except:
                 continue
                 
-            for item in dt_boxes:
-                # item = [box, (text, score)]
-                box = np.array(item[0]).astype(np.int32)
-                text_content = item[1][0]
-                
+            if dt_boxes is None: continue
+
+            for box in dt_boxes:
+                box = np.array(box).astype(np.int32)
                 y_min, y_max = np.min(box[:, 1]), np.max(box[:, 1])
                 x_min, x_max = np.min(box[:, 0]), np.max(box[:, 0])
                 
                 w = x_max - x_min
                 h = y_max - y_min
 
-                # 1. GEOMETRIC FILTERS (STRICT)
-                
-                # Center Check (10%)
+                # Filter: Must be central-ish
                 box_cx = (x_min + x_max) / 2
+                # STRICT CENTERING: Subtitles are almost perfect center. 
+                # Allow only 10% deviation (e.g. 192px on 1920px width). 
+                # Side menus/UI are usually > 25% off-center.
                 if abs(box_cx - center_x) > (width * 0.10): 
                     continue
                     
-                # Height Limit (15%)
+                # Filter: Must be small enough (not tall menus)
+                # Subtitles (2 lines) are usually ~10-12% of height max.
                 if h > (height * 0.15):
                     continue
 
-                # 2. ZONING CLASSIFICATION
-                # We categorize valid centered text into Top/Bottom buckets
-                is_top = y_min < (height * 0.3)
-                is_bottom = y_min > (height * 0.7)
-                
-                if is_top:
-                    top_texts.append(text_content)
-                elif is_bottom:
-                    bottom_texts.append(text_content)
-                    
-                # Store all valid candidates for later filtering based on decision
-                all_detections.append({
-                    "y_min": y_min, "y_max": y_max, 
-                    "w": w, "h": h, 
-                    "is_top": is_top, "is_bottom": is_bottom
-                })
+                # Filter: Strict UI Rejection (Ignore top 70% of screen)
+                # User complaint: "paints over interface". User requested search zone 30%.
+                # Standard subs are bottom 30%.
+                if y_min < (height * 0.7):
+                    continue
+
+                y_coords.append((y_min, y_max))
+                box_widths.append(w)
+                box_heights.append(h)
 
         cap.release()
         
-        if not all_detections:
-            return None, None, "bottom"
+        if not y_coords:
+            return None, None 
+            
+        # 1. Y-Band Analysis (Smart Zone)
+        y_min_list = [y[0] for y in y_coords]
+        y_max_list = [y[1] for y in y_coords]
+        
+        if len(y_min_list) < 3:
+            return None, None
 
-        # 3. STATIC vs DYNAMIC ANALYSIS (Auto-Zoning)
-        # Count UNIQUE texts. Subtitles change often (High Unique Count). 
-        # Static UI stays same (Low Unique Count).
-        unique_top = len(set(top_texts))
-        unique_bottom = len(set(bottom_texts))
-        
-        # Decision
-        if unique_top > unique_bottom:
-            detected_zone = "top"
-            print(f"[INFO] Auto-Zone: TOP (Top Unique={unique_top} vs Bottom={unique_bottom})")
-        else:
-            detected_zone = "bottom"
-            print(f"[INFO] Auto-Zone: BOTTOM (Top Unique={unique_top} vs Bottom={unique_bottom})")
-
-        # 4. FILTER DATA BY ZONE
-        final_valid_boxes = []
-        for d in all_detections:
-            if detected_zone == "top" and d["is_top"]:
-                final_valid_boxes.append(d)
-            elif detected_zone == "bottom" and d["is_bottom"]:
-                final_valid_boxes.append(d)
-        
-        if not final_valid_boxes:
-             return None, None, detected_zone
-             
-        # Extract metrics from VALID zone only
-        y_min_list = [d["y_min"] for d in final_valid_boxes]
-        y_max_list = [d["y_max"] for d in final_valid_boxes]
-        box_widths = [d["w"] for d in final_valid_boxes]
-        box_heights = [d["h"] for d in final_valid_boxes]
-        
-        # 5. CALCULATE MASK (Same logic as before)
         y_min_list.sort()
         y_max_list.sort()
         
+        # 10th/90th percentile for Band
         idx_10 = int(len(y_min_list) * 0.10)
         idx_90 = int(len(y_max_list) * 0.90)
         
@@ -311,18 +271,28 @@ class VideoProcessor:
         final_y_max = min(height, int(smart_y_max + pad))
         
         if (final_y_max - final_y_min) > (height * 0.8):
-             return None, None, detected_zone
+             return None, None
 
-        # Max Box
+        # 2. Max Dimensions Analysis (Smart Size)
+        # We want the max width/height seen (robust max) 
+        # to apply a "Stamp" that covers the largest subtitle case (two lines).
         box_widths.sort()
         box_heights.sort()
+        
+        # Take 95th percentile to avoid crazy outliers, but be aggressive enough to cover longest sentences
         max_w = box_widths[int(len(box_widths) * 0.95)]
         max_h = box_heights[int(len(box_heights) * 0.95)]
 
-        # EXPANSION: 45%
+        # EXPANSION: Increase height by 45% to cover thick strokes/outlines even better
+        # (Was 30%, user asked for +15% more)
         max_h = int(max_h * 1.45)
         
-        return (final_y_min, final_y_max), (max_w, max_h), detected_zone
+        # Force min dimensions based on band height
+        # If we detected a band of height 100, but max_h is only 40 (single lines mostly detected), 
+        # we might want to trust the band height more if it implies 2 lines?
+        # Better: Just use max_h but add padding logic later.
+        
+        return (final_y_min, final_y_max), (max_w, max_h)
 
     def process_video(
         self, input_path: Path, output_path: Path, options: VideoProcessingOptions, debug: bool = False, limit_frames: int = 0, dual_mode: bool = False
@@ -330,11 +300,7 @@ class VideoProcessor:
         # Step 0: Smart Scan (Layout Analysis)
         # We pre-calculate the "Max Plate" (largest subtitle box) to enforce a consistent mask size.
         # This solves the "dynamic 2-row" issue by applying the 2-row mask immediately from frame 1.
-        scan_y_bounds, scan_max_rect, scan_zone = self.scan_subtitle_layout(input_path)
-        
-        # APPLY AUTO-ZONING
-        options.subtitle_region_vertical = scan_zone # "top" or "bottom"
-        print(f"[INFO] Auto-Zone Detected: {scan_zone.upper()}")
+        scan_y_bounds, scan_max_rect = self.scan_subtitle_layout(input_path)
         
         global_mask_w = None
         global_mask_h = None
@@ -448,8 +414,7 @@ class VideoProcessor:
                     detections = self._detect_frame_text(
                         frame, detector, 
                         subtitle_region_height=options.subtitle_region_height,
-                        min_score=options.min_score,
-                        subtitle_region_vertical=options.subtitle_region_vertical
+                        min_score=options.min_score
                     )
                     
                     # Apply Dynamic Max Mask logic at detection time? 
