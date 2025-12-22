@@ -184,12 +184,9 @@ class VideoProcessor:
         height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         
-        duration = cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps
-        
-        # Scan 50 frames within the first 5 seconds (or full video if shorter)
+        # Scan 50 frames
         num_samples = 50
-        scan_duration = min(duration, 5.0)
-        interval = scan_duration / num_samples if num_samples > 0 else 1.0
+        interval = (cap.get(cv2.CAP_PROP_FRAME_COUNT) / fps) / num_samples if num_samples > 0 else 1.0
         frame_indices = [int(i * fps * interval) for i in range(num_samples)]
         
         # FIX: Instantiate wrapper, not raw engine
